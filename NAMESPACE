@@ -1,0 +1,61 @@
+
+import(lattice)
+import(grid)
+import(graphics)
+import(gridBase)
+import(grDevices)
+import(RGtk2)
+import(cairoDevice)
+import(gWidgets)
+# note cairoDevice::asCairoDevice calls require(RGtk2)
+
+# the main function
+export(
+	playwith,
+	autoplay
+)
+
+# built-in tool set
+export(
+	toolConstructors,
+	playApplicationTools,
+	playInteractionTools,
+	play3DTools,
+	playSplomTools
+)
+
+# API
+export(
+	playNewPlot,
+	playReplot,
+	quickTool,
+	playDevCur,
+	playDevSet,
+	playDevList,
+	playDevOff,
+	callArg,
+	"callArg<-",
+	playDo,
+	playPointInput,
+	playLineInput,
+	playRectInput,
+	playSelectData,
+	whichSpace,
+	deviceCoordsToSpace,
+	playFreezeGUI,
+	playThawGUI,
+	blockRedraws,
+	playPrompt,
+	rawXLim,
+	rawYLim,
+	"rawXLim<-",
+	"rawYLim<-",
+	xyCoords,
+	xyData
+)
+
+# misc
+export(
+	plotadd
+)
+
