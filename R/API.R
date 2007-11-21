@@ -98,8 +98,8 @@ blockRedraws <- function(expr, playState = playDevCur()) {
 	da$setSizeRequest(da$getAllocation()$width, da$getAllocation()$height)
 	#playState$win$setGeometryHints(da, list(max.width=myW, min.width=myW, 
 	#	max.height=myH, min.height=myH))
-	da$window$freezeUpdates()
-	eval.parent(substitute(expr))
+	da$window$freezeUpdates() # hmm
+	try(eval.parent(substitute(expr)))
 	da$window$thawUpdates()
 	#playState$win$setGeometryHints(da, list())
 	da$setSizeRequest(-1, -1)
@@ -186,7 +186,6 @@ setRawXYLim <- function(playState, x, x.or.y=c("x", "y")) {
 			}
 		}
 	}
-	if (is.numeric(x)) x <- signif(x, 4)
 	if (x.or.y == "x") callArg(playState, xlim) <- x
 	if (x.or.y == "y") callArg(playState, ylim) <- x
 }
@@ -281,25 +280,35 @@ playSelectData <- function(playState, prompt="Click or drag to select data point
 	if (is.null(foo$coords)) return(NULL)
 	coords <- foo$coords
 	data <- xyCoords(playState, space=foo$space)
-	ok <- ((min(coords$x) <= data$x) & (data$x <= max(coords$x))
-		& (min(coords$y) <= data$y) & (data$y <= max(coords$y)))
-	#if (!any(ok)) return(FALSE)
-	which <- which(ok)
+	which <- NULL
 	pos <- NULL
 	if (foo$is.click) {
 		x <- mean(coords$x)
 		y <- mean(coords$y)
-		if (length(which) > 1) {
-			# TODO: need to do this in device coords, not user coords!
-			pdists <- sqrt((data$x[ok] - x)^2 + (data$y[ok] - y)^2)
-			which <- which[which.min(pdists)]
+		ppxy <- playDo(playState, list(
+				lx=convertX(unit(x, "native"), "points", TRUE),
+				ly=convertY(unit(y, "native"), "points", TRUE),
+				px=convertX(unit(data$x, "native"), "points", TRUE),
+				py=convertY(unit(data$y, "native"), "points", TRUE)),
+				space=foo$space)
+		pdists <- with(ppxy, sqrt((px - lx)^2 + (py - ly)^2))
+		if (min(pdists, na.rm = TRUE) > 18) 
+			#warning("no observations within ", 18, " points")
+			which <- integer(0)
+		else {
+			which <- which.min(pdists)
+			pos <- with(ppxy, lattice:::getTextPosition(
+				x = lx - px[which], y = ly - py[which]))
 		}
-		# pos argument to text
-		if (length(which)) pos <- lattice:::getTextPosition(
-			x=(x - data$x[which]), y=(y - data$y[which]))
+	}
+	else {
+		# drag
+		ok <- ((min(coords$x) <= data$x) & (data$x <= max(coords$x))
+			& (min(coords$y) <= data$y) & (data$y <= max(coords$y)))
+		which <- which(ok)
 	}
 	list(which=which, space=foo$space, 
-		x=data$x[ok], y=data$y[ok], 
+		x=data$x[which], y=data$y[which], 
 		pos=pos, is.click=foo$is.click)
 }
 
