@@ -5,7 +5,7 @@
 
 MAJOR <- "0"
 MINOR <- "8"
-REVISION <- unlist(strsplit("$Revision: 24 $", split=" "))[2]
+REVISION <- unlist(strsplit("$Revision: 28 $", split=" "))[2]
 VERSION <- paste(MAJOR, MINOR, REVISION, sep=".")
 COPYRIGHT <- "(c) 2007 Felix Andrews <felix@nfrac.org>"
 WEBSITE <- "http://playwith.googlecode.com/"
@@ -77,7 +77,7 @@ playwith <- function(
 	# playState is the <environment> encapsulating the plot, window and device
 	cleanupStateEnv()
 	if (!is.null(playState)) {
-		stopifnot(is.environment(playState))
+		stopifnot(inherits(playState, "playState"))
 		if (is.null(title)) title <- playState$title
 	} else {
 		ID <- title
@@ -87,6 +87,7 @@ playwith <- function(
 	}
 	if (is.null(playState) || isTRUE(playState$keep)) {
 		playState <- new.env()
+		class(playState) <- c("playState", "environment")
 		ID <- basename(tempfile())
 		StateEnv[[ID]] <- playState
 	}
@@ -536,10 +537,12 @@ generateSpaces <- function(playState) {
 	else {
 		# base graphics plot
 		upViewport(0)
-		test <- try(downViewport(playState$baseViewports$plot.clip.off),
-			silent=TRUE)
-		if (!inherits(test, "try-error") && !is.null(current.vpPath()))
-			popViewport(0)
+		if (length(playState$baseViewports$plot.clip.off)) {
+			test <- try(downViewport(playState$baseViewports$plot.clip.off),
+				silent=TRUE)
+			if (!inherits(test, "try-error") && length(current.vpPath()))
+				popViewport(0)
+		}
 		vps <- baseViewports()
 		playState$baseViewports <- list()
 		pushViewport(vps$inner)
@@ -804,6 +807,8 @@ copyArgsIntoEnv <- function(the.call, envir=parent.frame(), newEnv, inherits=F, 
 			if (!isTRUE(pattern) && 
 				(any(grep(pattern, this.name))) != isMatch)
 				next
+			# TODO: this should stop at GlobalEnv, ignore loaded packages
+			# (`inherits=TRUE` matches packages too)
 			if (exists(this.name, envir=envir, inherits=inherits)
 			&& !exists(this.name, envir=newEnv, inherits=F)) {
 				assign(this.name, eval(this.arg, envir=envir),
