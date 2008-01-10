@@ -42,7 +42,7 @@ playwith(expr,
   \item{time.mode}{ whether the plot is to start in "time mode", with navigation along the x-axis. }
   \item{labels}{ a character vector of labels for data points, for use in \code{\link{identify}}. 
   	If missing, it will be guessed from the plot call arguments. }
-  \item{data.points}{ a list with elements "x" and "y" (or other suitable plotting structure)
+  \item{data.points}{ a data frame with elements "x" and "y" (or other suitable plotting structure)
 	giving locations of data points, in case these can not be guessed from the plot call arguments. }
   \item{is.lattice}{ whether the plot is a \link[lattice]{Lattice} plot, i.e. returns a trellis object.
   	If \code{NA}, the call name is matched against known Lattice function names. }
@@ -84,6 +84,12 @@ playwith(expr,
 		\item{\code{label.style}}{
 			output from \code{\link[grid]{gpar}}, specifying the style of labels.
 			e.g. \code{gpar(cex=1.5, fontface="italic", fontfamily="serif")}.
+		}
+		\item{\code{label.offset}}{
+			the distance from a data point to its identifying label. 
+			Can be numeric, in units of characters, or
+			a grid \code{\link[grid]{unit}}.
+			Default is 0.5, or \code{unit(0.5, "char")}.
 		}
 		\item{\code{arrow.style}}{
 			output from \code{\link[grid]{gpar}}, specifying the style of arrows. 
@@ -138,11 +144,11 @@ playwith(expr,
 	\itemize{
 		\item Lattice graphics: a plot will be recognised as a Lattice plot if 
 			the call is to one of the standard high-level functions.
-			Otherwise you may need \code{is.lattice=TRUE}.
+			(Otherwise you may need \code{is.lattice=TRUE}).
 		\item base graphics: this is the default case. (If the call has the same
 			name as a high-level Lattice function, you may need \code{is.lattice=FALSE}).
 		\item grid graphics (not Lattice): you must give the \code{viewport}
-			argument to enable interaction. This has not been well tested.
+			argument to enable interaction. (This has not been well tested).
 	}
 	
 	It is important to be aware that \code{playwith} makes a lot of guesses 
@@ -196,23 +202,75 @@ playwith(expr,
 \seealso{ \code{\link{autoplay}}, \link{playTools}, \link{playwith.API} }
 \examples{
 if (interactive()) {
-	
-	treering2 <- window(treering, start=1)
-	playwith(plot(treering2, xlim=c(0,300)), 
-		time.mode = TRUE,
-		labels = paste(time(treering2), "CE"))
-	
-	library(lattice)
-	
-	playwith(xyplot(Income ~ log(Population / Area) | state.region, 
-		data = data.frame(state.x77)), 
-		label.style = gpar(col="red", fontfamily="HersheySans",
-		cex=0.7))
-	
-	xx <- rnorm(50)
-	playwith(plot(density(xx, bw = cur.time)),
-		time.vector = seq(0.1, 1, by=0.05))
-	
+
+## time series plot
+treering2 <- window(treering, start=1)
+playwith(plot(treering2, xlim=c(0,300)), 
+	time.mode = TRUE,
+	labels = paste(time(treering2), "CE"))
+
+library(lattice)
+
+## multi-panel lattice plots
+playwith(xyplot(Income ~ log(Population / Area) | state.region, 
+	data = data.frame(state.x77)), 
+	label.style = gpar(col="red", fontfamily="HersheySans",
+	cex=0.7))
+
+## scrollbar controlling a smoothing parameter
+xx <- rnorm(50)
+playwith(plot(density(xx, bw = cur.time), panel.last = rug(xx)),
+	time.vector = seq(0.1, 1, by=0.05))
+
+## brushing multivariate scatterplots
+playwith(splom(environmental))
+
+## simple spin and zoom for 3D plots
+playwith(wireframe(volcano, drape=TRUE))
+
+## a minimalist grid plot
+gridPlot <- function(x, y, xlim = NULL, ylim = NULL) {
+	if (is.null(xlim)) xlim <- extendrange(x)
+	if (is.null(ylim)) ylim <- extendrange(y)
+	grid.newpage()
+	pushViewport(plotViewport())
+	grid.rect()
+	pushViewport(viewport(xscale=xlim, yscale=ylim,
+		name="theData"))
+	grid.points(x, y)
+	grid.xaxis()
+	grid.yaxis()
+}
+playwith(gridPlot(1:10, 11:20), viewport="theData")
+
+## acting like a dialog box (confirm close)
+subTools <- list("identify", "clear", "zoom", "zoomout", "zoomfit")
+confirmClose <- function(playState) {
+	if (gWidgets::gconfirm("Close window and report IDs?")) {
+		cat("Indices of identified data points:\n")
+		print(rbind(playState$ids)$which)
+		all.ids <- do.call(rbind, playState$ids)$which
+		print(all.ids)
+		return(FALSE)
+	} else TRUE # don't close
+}
+xy <- list(x=rnorm(20), y=rnorm(20))
+playwith(plot(xy), on.close=confirmClose, modal=TRUE, 
+	win.size=c(360, 360), show.call=FALSE, 
+	top=NULL, left=subTools)
+
+## local variables appearing in the plot call are stored
+globalOne <- rnorm(100)
+localStuff <- function() {
+	localOne <- rnorm(100)
+	playwith(plot(localOne, globalOne))
+}
+localStuff()
+## list objects that have been copied and stored
+sapply(playDevCur()$env, object.size)
+
+## see help(playwith.API) for examples of new tools.
+
 }
 }
 \keyword{ iplot }

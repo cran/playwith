@@ -54,9 +54,8 @@ playSplomTools <- list(
 	"annotate",
 	"arrow",
 	"edit.annotations",
-	"clear",
-	"--",
-	"brush"
+	"brush",
+	"clear"
 )
 
 toolConstructors <- list(
@@ -780,13 +779,22 @@ toolConstructors$identify <- function(playState) {
 							playState$env)
 						labels <- makeLabels(xObj, orSeq=T)
 					} else {
+						if (is.null(row.names(tmp.x)) &&
+							is.list(tmp.x) &&
+							all(c("x","y") %in% names(tmp.x)))
+							tmp.x <- tmp.x$x
 						labels <- makeLabels(tmp.x, orSeq=T)
 					}
 				}
 			}
 		} else {
 			# data.points were supplied
-			labels <- makeLabels(playState$data.points, orSeq=T)
+			tmp.x <- playState$data.points
+			if (is.null(row.names(tmp.x)) &&
+				is.list(tmp.x) &&
+				all(c("x","y") %in% names(tmp.x)))
+				tmp.x <- tmp.x$x
+			labels <- makeLabels(tmp.x, orSeq=T)
 		}
 	}
 	playState$labels <- labels
@@ -827,25 +835,30 @@ drawLabels <- function(playState, which, space="plot", pos=1) {
 	}
 	annots <- expression()
 	pos <- rep(pos, length=length(labels))
+	offset <- unit(0.5, "char")
+	if (!is.null(playState$label.offset)) {
+		offset <- playState$label.offset
+		if (!inherits(offset, "unit"))
+			offset <- unit(offset, "char")
+	}
 	# TODO: do this without a loop
 	for (i in seq_along(labels)) {
 		ux <- unit(x[i], "native")
 		uy <- unit(y[i], "native")
-		offset <- 0.5
 		if (pos[i] == 1) {
-		    uy <- uy - unit(offset, "char")
+		    uy <- uy - offset
 		    adj <- c(0.5, 1)
 		}
 		else if (pos[i] == 2) {
-		    ux <- ux - unit(offset, "char")
+		    ux <- ux - offset
 		    adj <- c(1, 0.5)
 		}
 		else if (pos[i] == 3) {
-		    uy <- uy + unit(offset, "char")
+		    uy <- uy + offset
 		    adj <- c(0.5, 0)
 		}
 		else if (pos[i] == 4) {
-		    ux <- ux + unit(offset, "char")
+		    ux <- ux + offset
 		    adj <- c(0, 0.5)
 		}
 		annots[[i]] <- call("grid.text", labels[i], x=ux, y=uy, 
@@ -913,8 +926,8 @@ annotate_handler <- function(widget, playState) {
 	myXY$x <- signif(myXY$x, 8)
 	myXY$y <- signif(myXY$y, 8)
 	if (foo$is.click) {
-		myX <- mean(myXY$x)
-		myY <- mean(myXY$y)
+		myX <- myXY$x[1]
+		myY <- myXY$y[1]
 	}
 	
 	playFreezeGUI(playState)
@@ -1588,185 +1601,78 @@ brush_handler <- function(widget, playState) {
 		return()
 	}
 	# do brushing
-	newFocus <- playFocus(playState)
-	if (!any(newFocus)) return()
-	playPrompt(playState, paste("Brushing data points...",
-		"Click the right mouse button to finish."))
-	brushed.new <- panel.brush.splom()
-	playPrompt(playState, NULL)
-	myPacket <- as.character(packet.number())
-	brushed.old <- playState$brushed[[myPacket]]
-	if (!is.null(brushed.old)) brushed.new <- union(brushed.new, brushed.old)
-	playState$brushed[[myPacket]] <- brushed.new
-	trellis.unfocus()
-	with(playState$tools, {
-		if (!is.null(clear)) clear["visible"] <- TRUE
-	})
-}
-
-brush.drag_handler <- function(widget, playState) {
-	if (!playState$is.lattice) {
-		gmessage.error("Brushing only works with lattice::splom")
-		return()
-	}
-	# do brushing
-	newFocus <- playFocus(playState)
-	if (!any(newFocus)) return()
-	playPrompt(playState) <- paste("Brushing data points in a region...",
-		"click and drag!")
-	pargs <- trellis.panelArgs()
-	nvars <- length(pargs$z)
-	devicePos <- getGraphicsEvent(prompt="",
-		onMouseDown=function(buttons, x, y) {
-			list(x=x, y=y)
+	repeat {
+		foo <- playRectInput(playState, prompt=paste("Brushing data points...",
+			"Click the right mouse button to finish."))
+		if (is.null(foo)) return()
+		if (is.null(foo$coords)) return()
+		if (foo$is.click) {
+			# make it a 15x15 pixel box
+			foo$dc$x <- foo$dc$x[1] + c(-7, 7)
+			foo$dc$y <- foo$dc$y[1] + c(-7, 7)
+			foo$coords <- with(foo, deviceCoordsToSpace(playState, 
+				dc$x, dc$y, space=space))
 		}
-	)
-	## which subpanel
-	panelPos <- deviceNPCToVp(devicePos, unit="npc", valueOnly=T)
-	colpos <- ceiling(panelPos$x * nvars)
-	rowpos <- ceiling(panelPos$y * nvars)
-	if (rowpos == colpos) {
-		trellis.unfocus()
-		return()
+		space <- foo$space
+		x.npc <- playDo(playState, 
+			convertX(unit(foo$coords$x, "native"), "npc", valueOnly=TRUE),
+			space=space)
+		y.npc <- playDo(playState, 
+			convertY(unit(foo$coords$y, "native"), "npc", valueOnly=TRUE),
+			space=space)
+		pdata <- xyCoords(playState, space=space)
+		nvars <- length(pdata$z)
+		## which subpanel
+		colpos <- ceiling(x.npc[1] * nvars)
+		rowpos <- ceiling(y.npc[1] * nvars)
+		if ((rowpos == colpos) ||
+			(colpos < 1) || (colpos > nvars) || 
+			(rowpos < 1) || (rowpos > nvars)) {
+				# try next point
+				colpos <- ceiling(x.npc[2] * nvars)
+				rowpos <- ceiling(y.npc[2] * nvars)
+		}
+		if ((rowpos == colpos) ||
+			(colpos < 1) || (colpos > nvars) || 
+			(rowpos < 1) || (rowpos > nvars)) {
+				# give up
+				return()
+		}
+		subpanel.name <- paste("subpanel", colpos, rowpos, sep = ".")
+		## coordinates of rect in subpanel
+		x.subp <- unit(nvars * (x.npc - (colpos-1) / nvars), "npc")
+		y.subp <- unit(nvars * (y.npc - (rowpos-1) / nvars), "npc")
+		## get to that viewport, so we can convert units
+		depth <- downViewport(subpanel.name)
+		x.subp <- convertX(x.subp, "native", TRUE)
+		y.subp <- convertY(y.subp, "native", TRUE)
+		upViewport(depth)
+		datax <- pdata$z[, colpos]
+		datay <- pdata$z[, rowpos]
+		brushed.new <- which(
+			(min(x.subp) < datax) & (datax < max(x.subp)) &
+			(min(y.subp) < datay) & (datay < max(y.subp))
+		)
+		playDo(playState, 
+			splom.drawBrushed(brushed.new, pargs=pdata),
+			space=space)
+		brushed.old <- playState$brushed[[space]]
+		if (!is.null(brushed.old)) brushed.new <- union(brushed.new, brushed.old)
+		playState$brushed[[space]] <- brushed.new
+		with(playState$tools, {
+			if (!is.null(clear)) clear["visible"] <- TRUE
+		})
 	}
-	subpanel.name <- paste("subpanel", colpos, rowpos, sep = ".")
-	## get to that viewport, so we can convert units
-	depth <- downViewport(subpanel.name)
-	## coordinates of click in subpanel
-	startPos <- deviceNPCToVp(devicePos, unit="native", valueOnly=T)
-	datax <- pargs$z[, colpos]
-	datay <- pargs$z[, rowpos]
-	
-	playState$tmp.brushed <- F
-	getGraphicsEvent(prompt="",
-		onMouseMove=function(buttons, x, y) {
-			#if (length(buttons)==0) return(TRUE) # 'buttons' unimplemented?
-			nowPos <- deviceNPCToVp(c(x, y), unit="native", valueOnly=T)
-			xx <- c(startPos$x, nowPos$x)
-			yy <- c(startPos$y, nowPos$y)
-			brushed <- (
-				(min(xx) < datax) & (datax < max(xx)) &
-				(min(yy) < datay) & (datay < max(yy))
-			)
-			brushed.new <- brushed & !playState$tmp.brushed
-			playState$tmp.brushed <- brushed |
-				playState$tmp.brushed
-			panel.points(datax[brushed.new], datay[brushed.new], 
-				col='black', pch=16)
-			NULL
-		},
-		onMouseUp=function(buttons, x, y) TRUE,
-		onMouseDown=function(buttons, x, y) TRUE
-	)
-	upViewport(depth)
-	brushed.new <- which(playState$tmp.brushed)
-	splom.drawBrushed(brushed.new)
-	playState$tmp.brushed <- NULL
-	if (!is.null(pargs$subscripts)) {
-		brushed.new <- pargs$subscripts[brushed.new]
-	}
-	myPacket <- as.character(packet.number())
-	brushed.old <- playState$brushed[[myPacket]]
-	if (!is.null(brushed.old)) brushed.new <- union(brushed.new, brushed.old)
-	playState$brushed[[myPacket]] <- brushed.new
-	trellis.unfocus()
-	with(playState$tools, {
-		if (!is.null(clear)) clear["visible"] <- TRUE
-	})
-}
-
-brush.region_handler <- function(widget, playState) {
-	nav.x <- TRUE
-	nav.y <- !(playState$time.mode)
-	if (!playState$is.lattice) {
-		gmessage.error("Brushing only works with lattice::splom")
-		return()
-	}
-	on.exit(playPrompt(playState) <- NULL)
-	on.exit(trellis.unfocus(), add=T)
-	lowEdge <- "bottom-left corner"
-	if (!nav.y) lowEdge <- "left edge"
-	if (!nav.x) lowEdge <- "bottom edge"
-	highEdge <- "top-right corner"
-	if (!nav.y) highEdge <- "right edge"
-	if (!nav.x) highEdge <- "top edge"
-	# set up masking
-	maskGrob <- rectGrob(gp=gpar(col="grey", 
-		fill=rgb(0.5,0.5,0.5, alpha=0.5)), name="tmp.mask")
-	# do brushing
-	newFocus <- playFocus(playState)
-	if (!any(newFocus)) return()
-	playPrompt(playState) <- paste("Brushing data points in a region...",
-		"click at the", lowEdge)
-	ll <- grid.locator(unit = "npc")
-	if (is.null(ll)) return()
-	pargs <- trellis.panelArgs()
-	nvars <- length(pargs$z)
-	## which subpanel
-	colpos <- ceiling(convertUnit(ll$x, "npc", valueOnly = TRUE) * nvars)
-	rowpos <- ceiling(convertUnit(ll$y, "npc", valueOnly = TRUE) * nvars)
-	if (rowpos == colpos) return()
-	subpanel.name <- paste("subpanel", colpos, rowpos, sep = ".")
-	## coordinates of click in subpanel
-	ll$x <- nvars * (ll$x - unit((colpos-1) / nvars, "npc"))
-	ll$y <- nvars * (ll$y - unit((rowpos-1) / nvars, "npc"))
-	## get to that viewport, so we can convert units
-	depth <- downViewport(subpanel.name)
-	xlim.new <- convertX(ll$x, "native", TRUE)
-	ylim.new <- convertY(ll$y, "native", TRUE)
-	# draw lower bounds
-	if (nav.x) panel.abline(v=xlim.new)
-	if (nav.y) panel.abline(h=ylim.new)
-	# get upper bounds
-	playPrompt(playState) <- paste("OK, now click at the", highEdge)
-	ll <- grid.locator(unit = "npc")
-	if (is.null(ll)) {
-		playReplot(playState)
-		return()
-	}
-	ll$x <- nvars * (ll$x - unit((colpos-1) / nvars, "npc"))
-	ll$y <- nvars * (ll$y - unit((rowpos-1) / nvars, "npc"))
-	xlim.new[2] <- convertX(ll$x, "native", TRUE)
-	ylim.new[2] <- convertY(ll$y, "native", TRUE)
-	# draw upper bounds
-	if (nav.x) panel.abline(v=xlim.new[2])
-	if (nav.y) panel.abline(h=ylim.new[2])
-	datax <- pargs$z[, colpos]
-	datay <- pargs$z[, rowpos]
-	brushed.new <- which(
-		(min(xlim.new) < datax) & (datax < max(xlim.new)) &
-		(min(ylim.new) < datay) & (datay < max(ylim.new))
-	)
-	if (!is.null(pargs$subscripts)) {
-		brushed.new <- pargs$subscripts[brushed.new]
-	}
-	myPacket <- as.character(packet.number())
-	brushed.old <- playState$brushed[[myPacket]]
-	if (!is.null(brushed.old)) brushed.new <- union(brushed.new, brushed.old)
-	playState$brushed[[myPacket]] <- brushed.new
-	if (!is.null(playState$tools$clear)) 
-		playState$tools$clear["visible"] <- TRUE
-	playReplot(playState)
 }
 
 brush_postplot_action <- function(widget, playState) {
 	if (playState$is.lattice) {
-		packets <- trellis.currentLayout(which="packet")
 		# draw persistent brushing
-		for (myPacket in names(playState$brushed)) {
-			whichOne <- which(packets == as.numeric(myPacket))
-			if (length(whichOne) == 0) next
-			myCol <- col(packets)[whichOne]
-			myRow <- row(packets)[whichOne]
-			trellis.focus("panel", myCol, myRow, highlight=F)
-			# find which points are identified
-			pargs <- trellis.panelArgs()
-			ids <- playState$brushed[[myPacket]]
-			# next line same as: which(pargs$subscripts %in% ids)
-			# TODO: ok?
-			ids.sub <- findInterval(ids, pargs$subscripts)
-			splom.drawBrushed(ids.sub)
-			trellis.unfocus()
+		for (space in names(playState$brushed)) {
+			pdata <- xyCoords(playState, space=space)
+			playDo(playState, 
+				splom.drawBrushed(ids.sub, pargs=pdata),
+				space=space)
 		}
 	}
 }
