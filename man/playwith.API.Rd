@@ -12,6 +12,9 @@
 	
 	Constructors should use the
 	convenience function \code{\link{quickTool}} where possible.
+	If the constructor function returns \code{NA}, that tool is skipped.
+	So one should check whether the tool can work with the current plot,
+	and skip it otherwise.
 	
 	Following is a table of the API functions that can be used by tools.
 	See the links to specific help pages for details.
@@ -77,8 +80,11 @@ helloTool <- function(playState) {
 ## this is called when the button is clicked
 hello_handler <- function(widget, playState) {
 	## need to re-draw plot to remove label
-	if (!widget["active"]) playReplot(playState)
-	else hello_postplot_action(widget, playState)
+	if (!widget["active"]) {
+		playReplot(playState)
+		return()
+	}
+	hello_postplot_action(widget, playState)
 }
 
 ## this is called after the plot is drawn (or re-drawn)
@@ -98,6 +104,7 @@ playwith(plot(1:10), bottom=list(helloTool))
 
 ## constructor function
 subsetTool <- function(playState) {
+	## set up a list to store state
 	playState$subsetTool <- list()
 	quickTool(playState,
 		label = "Data subset",

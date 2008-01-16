@@ -1,8 +1,8 @@
 Package: playwith
 Type: Package
 Title: A GUI for interactive plots using GTK+
-Version: 0.8.39
-Date: 2008-01-10
+Version: 0.8.49
+Date: 2008-01-16
 Author: Felix Andrews <felix@nfrac.org>
 Maintainer: Felix Andrews <felix@nfrac.org>
 Depends: R (>= 2.5.0), grid
@@ -16,4 +16,4 @@ Description: A graphical user interface for viewing and interacting with R plots
   This package is based on RGtk2, and so requires the GTK+ libraries.
 License: GPL (>= 2)
 URL: http://playwith.googlecode.com/
-Packaged: Thu Jan 10 02:06:31 2008; Felix
+Packaged: Wed Jan 16 18:45:14 2008; Felix
