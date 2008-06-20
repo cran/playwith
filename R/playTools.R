@@ -74,9 +74,10 @@ quickTool <-
     x[["label"]] <- label
     x[["icon-name"]] <- icon.name
     if (!is.null(tooltip)) {
-        result <- try(x$setTooltipText(tooltip), silent=TRUE)
-        if (inherits(result, "try-error"))
-            x$setTooltip(gtkTooltips(), tooltip) ## deprecated
+        result <- try(x[["tooltip-text"]] <- tooltip)
+        #result <- try(x$setTooltipText(tooltip), silent=TRUE)
+        #if (inherits(result, "try-error"))
+        #    x$setTooltip(gtkTooltips(), tooltip) ## deprecated
     }
     if (!is.null(f)) {
         if (is.null(data)) data <- playState
@@ -137,7 +138,8 @@ parameterControlTool <-
         assign(name, newval, envir=playState$env)
         playReplot(playState)
     }
-    if (is.integer(value)) {
+    if (is.integer(value) || inherits(value, "AsIs")) {
+        if (inherits(value, "AsIs")) value <- as.vector(value)
         box <- gtkVBox()
         box$packStart(gtkLabel(label))
         if (length(value) == 1) {
@@ -149,7 +151,7 @@ parameterControlTool <-
         }
         step <- min(diff(unique(sort(value))))
         widget <- gtkSpinButton(min=min(range), max=max(range), step=step)
-        widget[["digits"]] <- 0
+        widget[["digits"]] <- max(0, - floor(log10(step)))
         widget$setValue(get(name, envir=playState$env))
         gSignalConnect(widget, "value-changed",
                        updateParamValue, data=playState)
