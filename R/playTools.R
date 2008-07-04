@@ -5,42 +5,8 @@
 
 ### Tools
 
-playApplicationTools <-
-    list("options",
-         "stayontop",
-         "keep",
-         "save",
-         "copy",
-         "print",
-         "data",
-         "--",
-         "settings",
-         "theme",
-         "---",
-         "time.mode"
-         )
-
-playInteractionTools <-
-    list("expand",
-         "identify",
-         "annotate",
-         "arrow",
-         "edit.annotations",
-         "brush",
-         "clear",
-         "--",
-         "zoomin.3d",
-         "zoomout.3d",
-         "fly.left.3d",
-         "fly.right.3d",
-         "zoom",
-         "zoomout",
-         "zoomfit",
-         "zero",
-         "---",
-         "coords"
-         )
-
+## the big list of built-in tools
+## (added to by code in files playTools_*.R)
 toolConstructors <-
     list(`--` = function(...) gtkSeparatorToolItem(),
          `~~` = function(...) {
@@ -74,7 +40,7 @@ quickTool <-
     x[["label"]] <- label
     x[["icon-name"]] <- icon.name
     if (!is.null(tooltip)) {
-        result <- try(x[["tooltip-text"]] <- tooltip)
+        result <- try(x[["tooltip-text"]] <- tooltip, silent=TRUE)
         #result <- try(x$setTooltipText(tooltip), silent=TRUE)
         #if (inherits(result, "try-error"))
         #    x$setTooltip(gtkTooltips(), tooltip) ## deprecated
@@ -92,8 +58,7 @@ quickTool <-
 parameterControlTool <-
     function(playState, name, value,
              label = name,
-             horizontal = TRUE,
-             spinbutton = FALSE)
+             horizontal = TRUE)
 {
     stopifnot(length(value) > 0)
     if (!is.logical(value))

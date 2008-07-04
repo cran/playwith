@@ -1,14 +1,10 @@
 
-import(lattice)
-import(grid)
-import(graphics)
-import(gridBase)
-import(grDevices)
 import(RGtk2)
-import(cairoDevice)
-import(gWidgets)
-import(gWidgetsRGtk2)
 # note cairoDevice::asCairoDevice calls require(RGtk2)
+import(gridBase)
+import(graphics)
+import(grDevices)
+importFrom(utils, head, modifyList)
 
 # the main function
 export(
@@ -16,52 +12,47 @@ export(
 	autoplay
 )
 
-# built-in tool set
+# settings
 export(
-	toolConstructors,
-	playApplicationTools,
-	playInteractionTools
+       playwith.options,
+       playwith.getOption
 )
 
 # API
 export(
-	playNewPlot,
-	playReplot,
-	quickTool,
-	parameterControlTool,
-	playDevCur,
-	playDevSet,
-	playDevList,
-	playDevOff,
-	callArg,
-	"callArg<-",
+       playNewPlot,
+       playReplot,
+       quickTool,
+       parameterControlTool,
+       playDevCur,
+       playDevSet,
+       playDevList,
+       playDevOff,
+       playGetIDs,
+       callArg,
+       "callArg<-",
        mainCall,
        "mainCall<-",
-	playDo,
-	playPointInput,
-	playLineInput,
-	playRectInput,
-	playSelectData,
-	whichSpace,
-	deviceCoordsToSpace,
-	playFreezeGUI,
-	playThawGUI,
-	blockRedraws,
-	playPrompt,
-	rawXLim,
-	rawYLim,
-	"rawXLim<-",
-	"rawYLim<-",
-	xyCoords,
-	xyData,
-	spaceCoordsToDataCoords,
-	dataCoordsToSpaceCoords
-)
+       playDo,
+       playPointInput,
+       playLineInput,
+       playRectInput,
+       playSelectData,
+       whichSpace,
+       deviceCoordsToSpace,
+       playFreezeGUI,
+       playThawGUI,
+       blockRedraws,
+       playPrompt,
+       rawXLim,
+       rawYLim,
+       "rawXLim<-",
+       "rawYLim<-",
+       xyCoords,
+       xyData,
+       spaceCoordsToDataCoords,
+       dataCoordsToSpaceCoords
+       )
 
 S3method(print, playState)
-
-# misc
-export(
-	plotadd
-)
 

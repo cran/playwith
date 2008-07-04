@@ -26,7 +26,7 @@ playDevOff(playState = playDevCur())
 }
 \value{
 	\code{playDevCur} returns the currently active \code{\link{playState}} object.
-	
+
 	\code{playDevList} returns a list of \code{\link{playState}} objects for all open \code{playwith} plot windows.
 }
 \author{ Felix Andrews \email{felix@nfrac.org}  }

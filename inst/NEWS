@@ -1,11 +1,69 @@
 
+Changes in Version 0.9-3
+
+  o recognise un-named "data" argument to formula methods
+    such as plot.formula, boxplot.formula.
+
+Changes in Version 0.9-2
+
+  o tooltips show labels for points when click and hold mouse button.
+
+  o improvements to basic device mode (options(device="playwith")):
+    preview button in annotation tool now works; and there is an
+    "undo annotation" tool, allowing last annotation to be removed.
+    (still some problems with mixing base and grid graphics).
+
+  o improved code for guessing xy coordinates and labels.
+
+  o improved code for guessing main function (assume "plot" if found).
+
+Changes in Version 0.9-1
+
+  o cairoDevice package in Depends rather than Imports, since
+    it sets options(device="Cairo"), which is bad if not attached!
+
+Changes in Version 0.9-0
+
+  o user settings: playwith.options / playwith.getOption.
+
+Changes in Version 0.8-57
+
+  o now works on Linux!
+    (had problems related to event loop -- sizing widgets etc).
+
+  o new function playGetIDs() gives currently identified points.
+
+  o device size, rather than window size, can now be specifed.
+    This matches other devices. Also pointsize can now be set.
+
+  o option to show tooltips for toolbar buttons (uses gtkMain()).
+
+  o mouse clicks better distinguished from drags: time <= 1/4 sec.
+
+  o xlim/ylim and time mode now handles date-time classes better,
+    including "yearmon" and "yearqtr" from the zoo package.
+
+  o zooming now tries to account for axis padding.
+
+  o plot call is now deparsed without showAttributes option (for
+    clarity). Call objects are used to maintain date time classes.
+
+  o "clear" button now shows a graphical dialog under linux.
+
+  o warning about lattice subscripts now checks the panelArgs
+    (it was warning spuriously before, eg xyplot.zoo).
+
+  o more use of locks to try to avoid multi-thread conflicts.
+
+  o attempt to set GTK tooltips is now a *silent* try(), again.
+
+  o zoom and identify tools check par("mfrow") in case it is a
+    multi-figure base graphics plot, and omit themselves if so.
+
 Changes in Version 0.8-56
 
   o arguments to `parameters` can use I() to force a spinbutton
     rather than slider.
-
-  o plot call is initially evaluated in a try() block;
-    hoping this will avoid "margins too small" error on linux.
 
 Changes in Version 0.8-55
 

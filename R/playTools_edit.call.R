@@ -7,8 +7,9 @@
 
 edit.call.inline_handler <- function(widget, playState)
 {
-    ## the original call -- this should match the code in playReplot!
-    callTxt <- deparseOneLine(playState$call, control="showAttributes")
+    ## the original call
+    callTxt <- deparseOneLine(playState$call, control=
+                              playwith.getOption("deparse.options"))
     newTxt <- widget["text"]
     if (identical(newTxt, callTxt)) return()
     if (identical(newTxt, "")) return()
@@ -28,7 +29,10 @@ edit.call.inline_handler <- function(widget, playState)
 edit.call_handler <- function(widget, playState)
 {
     theCall <- playState$call
-    callTxt <- paste(deparse(theCall, control="showAttributes"), collapse="\n")
+    callTxt <-
+        paste(deparse(theCall, control=
+                      playwith.getOption("deparse.options")),
+              collapse="\n")
     repeat {
         newTxt <- guiTextInput(callTxt, title="Edit plot call",
                                prompt="", accepts.tab=F)
