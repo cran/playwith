@@ -57,7 +57,7 @@ cleanupStateEnv <- function()
     }
 }
 
-callArg <- function(playState, arg, expr, data = NULL)
+callArg <- function(playState, arg, expr, eval = TRUE, data = NULL)
 {
     if (missing(expr) == missing(arg)) stop("give 'arg' or 'expr'")
     if (!missing(expr)) arg <- substitute(expr)
@@ -69,6 +69,7 @@ callArg <- function(playState, arg, expr, data = NULL)
     else paste("$", deparseOneLine(arg), sep="")
     mainCall <- mainCall(playState)
     zap <- eval(parse(text=paste("mainCall", getx, sep="")))
+    if (eval == FALSE) return(zap)
     if (mode(zap) == "expression") return(zap)
     if (is.null(data))
         eval(zap, envir=playState$env, enclos=parent.frame())
@@ -110,6 +111,44 @@ mainCall <- function(playState) {
 "mainCall<-" <- function(playState, value) {
     recursiveIndex(playState$call, playState$main.call.index) <- value
     playState
+}
+
+updateMainCall <- function(playState) {
+    ## find which component of the call takes arguments (xlim etc)
+    main.function <- playState$.args$main.function
+    tmpCall <- playState$call
+    okCallPath <- function(tmpCall, main.function) {
+        tmpFun <- eval(tmpCall[[1]])
+        if (!is.null(main.function)) {
+            ok <- identical(tmpFun, main.function)
+        } else {
+            ok <- any(c("xlim", "...") %in% names(formals(tmpFun)))
+            ok <- ok && !identical(tmpFun, with) ## skip `with` function
+        }
+        if (ok) return(TRUE)
+        if (length(tmpCall) > 1)
+            for (i in seq(2, length(tmpCall)))
+                if (is.call(tmpCall[[i]])) {
+                    tmpPath <- okCallPath(tmpCall[[i]], main.function)
+                    if (isTRUE(tmpPath)) return(i)
+                    if (!is.null(tmpPath)) return(c(i, tmpPath))
+                }
+        return(NULL)
+    }
+    main.call.index <- okCallPath(tmpCall, main.function)
+    if (is.null(main.function)) {
+        ## look for a call to "plot"
+        main.call.index.plot <- okCallPath(tmpCall, plot)
+        if (!is.null(main.call.index.plot)) {
+            ## found "plot" call
+            main.call.index <- main.call.index.plot
+        }
+    }
+    if (isTRUE(main.call.index)) main.call.index <- NA ## top-level
+    playState$main.call.index <- main.call.index
+    ## check whether the called function accepts arguments
+    playState$accepts.arguments <- !is.null(playState$main.call.index)
+        #((typeof(callFun) == "closure") && !is.null(formals(callFun)))
 }
 
 playFreezeGUI <- function(playState)
@@ -351,9 +390,10 @@ playSelectData <- function(playState, prompt="Click or drag to select data point
     if (is.null(foo)) return(NULL)
     if (is.null(foo$coords)) return(NULL)
     coords <- foo$coords
-    ## convert from log scale if necessary
-    coords <- spaceCoordsToDataCoords(playState, coords)
     data <- xyCoords(playState, space=foo$space)
+    ## convert to log scale if necessary
+    data <- dataCoordsToSpaceCoords(playState, data)
+
     if (length(data$x) == 0) {
         gmessage.error(paste("Sorry, can not guess the data point coordinates.",
                              "Please contact the maintainer with suggestions."))
@@ -364,11 +404,11 @@ playSelectData <- function(playState, prompt="Click or drag to select data point
     if (foo$is.click) {
         x <- coords$x[1]
         y <- coords$y[1]
-        ppxy <- playDo(playState, list(
-                                       lx=convertX(unit(x, "native"), "points", TRUE),
-                                       ly=convertY(unit(y, "native"), "points", TRUE),
-                                       px=convertX(unit(data$x, "native"), "points", TRUE),
-                                       py=convertY(unit(data$y, "native"), "points", TRUE)),
+        ppxy <- playDo(playState,
+                       list(lx=convertX(unit(x, "native"), "points", TRUE),
+                            ly=convertY(unit(y, "native"), "points", TRUE),
+                            px=convertX(unit(data$x, "native"), "points", TRUE),
+                            py=convertY(unit(data$y, "native"), "points", TRUE)),
                        space=foo$space)
         pdists <- with(ppxy, sqrt((px - lx)^2 + (py - ly)^2))
         if (min(pdists, na.rm = TRUE) > 18)
@@ -376,8 +416,8 @@ playSelectData <- function(playState, prompt="Click or drag to select data point
             which <- integer(0)
         else {
             which <- which.min(pdists)
-            pos <- with(ppxy, lattice:::getTextPosition(
-                                                        x = lx - px[which], y = ly - py[which]))
+            pos <- with(ppxy, lattice:::getTextPosition(x = lx - px[which],
+                                                        y = ly - py[which]))
         }
     }
     else {
@@ -387,6 +427,7 @@ playSelectData <- function(playState, prompt="Click or drag to select data point
         which <- which(ok)
     }
     c(list(which=which, x=data$x[which], y=data$y[which],
+           subscripts=data$subscripts[which],
            pos=pos, is.click=foo$is.click),
       foo)
 }
@@ -482,12 +523,12 @@ playClickOrDrag <-
     if (is.null(foo)) return(NULL)
     dc <- foo$dc
     coords <- NULL
-    space <- whichSpace(playState, dc$x[1], dc$y[1])
+    ## work out which space the drag was in: try the mid-point first
+    space <- whichSpace(playState, mean(dc$x), mean(dc$y))
+    ## otherwise, try start of drag
+    if (space == "page") space <- whichSpace(playState, dc$x[1], dc$y[1])
+    ## otherwise, try end of drag
     if (space == "page") space <- whichSpace(playState, dc$x[2], dc$y[2])
-    if (space == "page") {
-        ## corners of drag not inside a defined space: try the mid-point
-        space <- whichSpace(playState, mean(dc$x), mean(dc$y))
-    }
     if (space != "page") {
         xy0 <- deviceCoordsToSpace(playState, dc$x[1], dc$y[1], space=space)
         xy1 <- deviceCoordsToSpace(playState, dc$x[2], dc$y[2], space=space)
@@ -656,7 +697,7 @@ xyData <- function(playState, space="plot")
     tmp.x <- callArg(playState, 1, data=tmp.data)
     if (inherits(tmp.x, "formula")) {
         ## if 1st arg is formula, 2nd is `data`
-        if (is.null(tmp.data) &&
+        if (is.null(tmp.data) && (length(mainCall) > 2) &&
             (is.null(names(mainCall)) ||
              identical(names(mainCall)[[3]], "")))
             tmp.data <- callArg(playState, 2)

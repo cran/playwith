@@ -13,10 +13,22 @@ toolConstructors$identify <- function(playState)
     }
     if (is.null(playState$data.points)) {
         if (playState$accepts.arguments == FALSE) return(NA)
-        ## does not currently work with "splom" or 3D plots (TODO)
         callName <- deparseOneLine(mainCall(playState)[[1]])
-        if (callName %in% c("splom", "cloud", "wireframe"))
-            return(NA)
+        ## detect plots that this will not work with
+        ## TODO: check that xyData() has x and y coords
+        ## lattice package:
+        if (callName %in%
+            c("splom", "cloud", "wireframe",
+              "contourplot", "levelplot",
+              "histogram", "densityplot", "barchart")) return(NA)
+        ## what about parellel?
+        ## from graphics package:
+        if (callName %in%
+            c("hist", "barplot", "spineplot", "mosaic",
+              "assocplot", "fourfoldplot",
+              "coplot", "image", "contour", "persp",
+              "pie", "pairs")) return(NA)
+
     }
     mainCall <- mainCall(playState)
     labels <- playState$.args$labels
@@ -91,17 +103,6 @@ toolConstructors$identify <- function(playState)
         }
     }
     playState$labels <- labels
-    ## add click event handler to plot -- always active
-    if (is.null(playState$widgets$plotIDEventSig)) {
-        playState$widgets$plotIDEventSig <-
-            gSignalConnect(playState$widgets$drawingArea,
-                           "button-press-event", id_click_handler, data=playState)
-    }
-    if (is.null(playState$widgets$plotUnIDEventSig)) {
-        playState$widgets$plotUnIDEventSig <-
-            gSignalConnect(playState$widgets$drawingArea,
-                           "button-release-event", id_unclick_handler, data=playState)
-    }
     ## make the widget
     quickTool(playState,
               label = "Identify",
@@ -114,9 +115,12 @@ toolConstructors$identify <- function(playState)
 makeLabels <- function(x, orSeq=FALSE)
 {
     labels <- row.names(x)
-    if (inherits(x, "POSIXt"))
-        labels <- format(x)
-    if (inherits(x, "Date"))
+    if (is.factor(x) || is.character(x))
+        labels <- as.character(x)
+    if (inherits(x, "POSIXt") ||
+        inherits(x, "Date") ||
+        inherits(x, "yearmon") ||
+        inherits(x, "yearqtr"))
         labels <- format(x)
     if (inherits(x, "ts") || inherits(x, "zoo"))
         labels <- rep(format(stats::time(x)), NCOL(x))
@@ -129,14 +133,22 @@ makeLabels <- function(x, orSeq=FALSE)
 drawLabels <- function(playState, which, space="plot", pos=1)
 {
     playDevSet(playState)
-    xy <- xyCoords(playState, space=space)
-    xy <- dataCoordsToSpaceCoords(playState, xy)
-    x <- xy$x[which]
-    y <- xy$y[which]
+    data <- xyCoords(playState, space=space)
+    if (length(data$x) == 0) return(FALSE)
+    if (length(data$y) == 0) return(FALSE)
+    ## convert to log scale if necessary
+    data <- dataCoordsToSpaceCoords(playState, data)
+    x <- data$x[which]
+    y <- data$y[which]
+    if (playState$is.lattice && !is.null(data$subscripts)) {
+        subwhich <- findInterval(which, data$subscripts)
+        x <- data$x[subwhich]
+        y <- data$y[subwhich]
+    }
     labels <- playState$labels
-    if (playState$is.lattice && !is.null(xy$subscripts) &&
-        (length(labels) > length(xy$subscripts)))
-        labels <- labels[ xy$subscripts ]
+    #if (playState$is.lattice && !is.null(data$subscripts) &&
+    #    (length(labels) > length(data$subscripts)))
+    #    labels <- labels[ data$subscripts ]
     labels <- labels[which]
     style <- eval(playState$label.style)
     if (is.null(playState$label.style)) {
@@ -182,6 +194,8 @@ identify_handler <- function(widget, playState)
                               "Click or drag to identify points. Right-click to end.")
         if (is.null(foo)) break
         if (length(foo$which) == 0) next
+        if (!is.null(foo$subscripts))
+            foo$which <- foo$subscripts
         with(foo, {
             if (!is.click) pos <- 1
             ## store newly identified points in playState
@@ -211,49 +225,66 @@ identify_postplot_action <- function(widget, playState)
     }
 }
 
-id_click_handler <- function(widget, event, playState)
+## this is called by clickhandler tool
+identifyCore <- function(playState, foo)
 {
-    if (!isTRUE(playState$plot.ready)) return(FALSE)
-    ## coords handler already does this:
-    #if (playState$.need.reconfig) generateSpaces(playState)
-    da <- playState$widgets$drawingArea
-    result <- try(da["tooltip-text"] <- NULL, silent=TRUE)
-    if (inherits(result, "try-error")) return(FALSE)
-    x <- event$x
-    y <- event$y
-    space <- whichSpace(playState, x, y)
-    if (space == "page") return(FALSE)
-    xy <- deviceCoordsToSpace(playState, x, y, space=space)
-    xy <- spaceCoordsToDataCoords(playState, xy)
-    data <- xyCoords(playState, space=space)
+    if (!("identify" %in% names(playState$tools))) return()
+    space <- foo$space
+    data <- xyCoords(playState, space=foo$space)
+    ## convert to log scale if necessary
+    data <- dataCoordsToSpaceCoords(playState, data)
     if (length(data$x) == 0) return(FALSE)
-    x <- xy$x
-    y <- xy$y
-    ppxy <- playDo(playState, list(
-                                   lx=convertX(unit(x, "native"), "points", TRUE),
-                                   ly=convertY(unit(y, "native"), "points", TRUE),
-                                   px=convertX(unit(data$x, "native"), "points", TRUE),
-                                   py=convertY(unit(data$y, "native"), "points", TRUE)),
-                   space=space)
-    pdists <- with(ppxy, sqrt((px - lx)^2 + (py - ly)^2))
-    if (min(pdists, na.rm = TRUE) > 18)
-        return(FALSE)
-    which <- which.min(pdists)
-    lab <- playState$labels[which]
-    da["tooltip-text"] <- lab
-    ## try to force update
-    da$window$processUpdates(FALSE)
-    while (gtkEventsPending()) gtkMainIterationDo(blocking=FALSE)
-    return(FALSE)
-}
+    if (length(data$y) == 0) return(FALSE)
+    coords <- foo$coords
 
-id_unclick_handler <- function(widget, event, playState)
-{
-    if (!isTRUE(playState$plot.ready)) return(FALSE)
-    da <- playState$widgets$drawingArea
-    result <- try(da["tooltip-text"] <- NULL, silent=TRUE)
-    ## try to force update
-    gdkWindowProcessAllUpdates()
+    x <- coords$x[1]
+    y <- coords$y[1]
+    ppxy <- playDo(playState,
+                   list(lx=convertX(unit(x, "native"), "points", TRUE),
+                        ly=convertY(unit(y, "native"), "points", TRUE),
+                        px=convertX(unit(data$x, "native"), "points", TRUE),
+                        py=convertY(unit(data$y, "native"), "points", TRUE)),
+                   space=foo$space)
+    pdists <- with(ppxy, sqrt((px - lx)^2 + (py - ly)^2))
+    ## all data points within 11 points
+    which <- which(pdists < 11)
+    if (length(which) == 0) return()
+    ## order by distance from click
+    which <- which[order(pdists[which])]
+    idMenu <- gtkMenu()
+    for (w in which) {
+        datx <- data$x[[w]]
+        daty <- data$y[[w]]
+        pos <- with(ppxy, lattice:::getTextPosition(x = lx - px[w],
+                                                    y = ly - py[w]))
+        ss <- data$subscripts[[w]]
+        if (is.null(ss)) ss <- w
+        label <- toString(playState$labels[[ss]])
+        label <- paste(label, " (x: ", format(signif(datx, 4)),
+                       ", y: ", format(signif(daty, 4)), ")", sep="")
+        item <- gtkMenuItem(label)
+        idMenu$append(item)
+        idInfo <- list(which=ss, pos=pos)
+        gSignalConnect(item, "activate",
+                       function(widget, user.data) {
+                           which <- user.data$which
+                           pos <- user.data$pos
+                           ## store newly identified points in playState
+                           ids.new <- data.frame(which=which, pos=pos)
+                           ids.old <- playState$ids[[space]] ## may be NULL
+                           if (is.null(ids.old)) ids.old <- ids.new
+                           else ids.new <- rbind(ids.old, ids.new)
+                           playState$ids[[space]] <- ids.new
+                           ## draw them
+                           drawLabels(playState, which=which, space=space, pos=pos)
+                           ## update other tool states
+                           with(playState$tools, {
+                               if (exists("clear", inherits=F))
+                                   clear["visible"] <- TRUE
+                           })
+                       }, data=idInfo)
+    }
+    ## show the menu
+    idMenu$popup(button=0, activate.time=gtkGetCurrentEventTime())
     while (gtkEventsPending()) gtkMainIterationDo(blocking=FALSE)
-    return(FALSE)
 }

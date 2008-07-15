@@ -1,4 +1,56 @@
 
+Changes in Version 0.9-7
+
+  o click on plot makes a pop-up menu with labels for nearby points.
+    Select one to add that label to the plot.
+
+  o clicks on plot avoid looking up data points unless neccessary.
+
+  o reorder factor levels only once in latticist(), which removes
+    lots of ugly reorderByFreq() from the plot calls.
+
+  o latticist preloads some useful variable expressions and subsets.
+
+  o latticist converts integers with only 1 or 2 levels to factor.
+
+  o use shingle levels for labels in strips and on axes.
+
+  o latticist gives more error messages in dialog boxes.
+
+  o latticist passes labels argument to playwith(), which stops it
+    from trying to guess labels from the plot call each time.
+
+Changes in Version 0.9-6
+
+  o use of equal.count and cutEq in latticist.
+
+  o use of useOuterStrips and layout in latticist.
+
+Changes in Version 0.9-5
+
+  o marginals()
+
+  o reorderByFreq()
+
+  o fix click-and-hold identify, to account for lattice subscripts.
+
+  o playGetIDs() now returns subscripts into original data from
+    multi-panel lattice plots (was indexing data in each panel).
+    (And the internal representation is now as lattice subscripts).
+
+Changes in Version 0.9-4
+
+  o latticist!
+
+  o callArg gains a logical 'eval' argument.
+
+  o fix error when using a single argument that is a formula.
+
+  o fix error when identifying points with univariate lattice
+    plots (e.g. data$x is NULL).
+
+  o remove effect of 'title' on choosing replacement device.
+
 Changes in Version 0.9-3
 
   o recognise un-named "data" argument to formula methods

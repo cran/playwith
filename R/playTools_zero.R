@@ -26,6 +26,15 @@ zero_handler <- function(widget, playState)
     yonly <- playState$time.mode && is.null(playState$time.vector)
     trans.x <- !yonly
     trans.y <- TRUE
+    ## check for categoricals on axes
+    if (playState$is.lattice) {
+        x.limits <- playState$trellis$x.limits
+        y.limits <- playState$trellis$y.limits
+        if (is.list(x.limits)) x.limits <- x.limits[[1]]
+        if (is.list(y.limits)) y.limits <- y.limits[[1]]
+        if (is.character(x.limits)) trans.x <- FALSE
+        if (is.character(y.limits)) trans.y <- FALSE
+    }
     if (trans.x) {
         xlim <- rawXLim(playState)
         if (min(xlim) > 0) {
@@ -52,16 +61,26 @@ zero_postplot_action <- function(widget, playState)
     yonly <- playState$time.mode && is.null(playState$time.vector)
     trans.x <- !yonly
     trans.y <- TRUE
+    ## check for categoricals on axes
+    if (playState$is.lattice) {
+        x.limits <- playState$trellis$x.limits
+        y.limits <- playState$trellis$y.limits
+        if (is.list(x.limits)) x.limits <- x.limits[[1]]
+        if (is.list(y.limits)) y.limits <- y.limits[[1]]
+        if (is.character(x.limits)) trans.x <- FALSE
+        if (is.character(y.limits)) trans.y <- FALSE
+    }
     nonzero <- FALSE
+    eps <- .Machine$double.eps * 2
     if (trans.x) {
         xlim <- rawXLim(playState)
-        if (min(xlim) > 0) nonzero <- TRUE
-        if (max(xlim) < 0) nonzero <- TRUE
+        if (min(xlim) > eps) nonzero <- TRUE
+        if (max(xlim) < -eps) nonzero <- TRUE
     }
     if (trans.y) {
         ylim <- rawYLim(playState)
-        if (min(ylim) > 0) nonzero <- TRUE
-        if (max(ylim) < 0) nonzero <- TRUE
+        if (min(ylim) > eps) nonzero <- TRUE
+        if (max(ylim) < -eps) nonzero <- TRUE
     }
     widget["visible"] <- nonzero
 }
