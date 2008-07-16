@@ -272,9 +272,13 @@ setRawXYLim <- function(playState, x, x.or.y=c("x", "y"))
         x.panel <- xyData(playState, space="page")[[x.or.y]]
         ## set factor labels explicitly, othewise is coerced to numeric
         if (is.factor(x.panel)) {
-            if (is.null(callArg(playState, expr=scales[[x.or.y]]$labels))) {
-                callArg(playState, expr=scales[[x.or.y]]$labels) <- levels(x.panel)
-                callArg(playState, expr=scales[[x.or.y]]$at) <- 1:nlevels(x.panel)
+            scales.labels <- substitute(scales[[x.or.y]]$labels,
+                                        list(x.or.y=x.or.y))
+            scales.at <- substitute(scales[[x.or.y]]$at,
+                                        list(x.or.y=x.or.y))
+            if (is.null(callArg(playState, scales.labels))) {
+                callArg(playState, scales.labels) <- levels(x.panel)
+                callArg(playState, scales.at) <- 1:nlevels(x.panel)
             }
         }
         else if (is.somesortoftime(x.panel)) {
@@ -555,7 +559,7 @@ handleClickOrDrag <-
                                     dest.x=0, dest.y=0, width=da.w, height=da.h)
     if (is.null(buf)) stop("Could not make pixbuf")
     gc <- gdkGCNew(da$window)
-    gc$copy(da[["style"]][["blackGc"]])
+    gc$copy(da["style"]$blackGc)
     gc$setRgbFgColor(gdkColorParse("black")$color)
     gc$setRgbBgColor(gdkColorParse("white")$color)
     gc$setLineAttributes(line.width=1, line.style=GdkLineStyle["double-dash"],
@@ -563,6 +567,7 @@ handleClickOrDrag <-
     gc$setDashes(c(8, 4))
     px00 <- px0
     px00.prev <- px0
+    CLICKDUR <- 0.25 ## seconds
     release_handler <- function(widget, event, env) {
         ## mouse button was released
         env$px1 <- list(x=event$x, y=event$y)
@@ -612,7 +617,8 @@ handleClickOrDrag <-
         if (!("y" %in% scales)) yy <- c(-1, da.h)
         wd <- xx[2] - xx[1] + 2
         ht <- yy[2] - yy[1] + 2
-        da$window$invalidateRect(list(x=xx[1], y=yy[1], width=wd, height=ht),
+        if ((proc.time()[3] - init_time) > CLICKDUR)
+            da$window$invalidateRect(list(x=xx[1], y=yy[1], width=wd, height=ht),
                                  invalidate.children=FALSE)
         ## try to force redraw
         gdkWindowProcessAllUpdates()
@@ -631,7 +637,7 @@ handleClickOrDrag <-
     if (!exists("px1", inherits=FALSE)) return(NULL)
     dc <- list(x=c(px0$x, px1$x), y=c(px0$y, px1$y))
     ## was it a click or drag? (click = no slower than 1/4 second)
-    is.click <- (proc.time()[3] - init_time) <= 0.25
+    is.click <- (proc.time()[3] - init_time) <= CLICKDUR
     ## alternative criteria for click: moved less than 10 pixels
     is.click <- is.click ||
                 ((abs(diff(dc$x)) < 10) && (abs(diff(dc$y)) < 10))
@@ -655,9 +661,12 @@ xyData <- function(playState, space="plot")
     if (playState$is.lattice) {
         if (space == "page") {
             ## data from all packets
-            return(do.call(rbind,
-                           lapply(playState$trellis$panel.args, as.data.frame)
-                           ))
+            tmp <- try(do.call(rbind,
+                               lapply(playState$trellis$panel.args, as.data.frame)
+                               ), silent=TRUE)
+            if (inherits(tmp, "try-error"))
+                return(NULL)
+            return(tmp)
         }
         if (space == "plot") {
             space <- packet.number()

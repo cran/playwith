@@ -39,11 +39,18 @@ See \code{\link[lattice]{show.settings}} and \code{\link[lattice]{simpleTheme}}.
 \seealso{ \code{\link{playwith}}, \code{\link[lattice]{Lattice}} }
 \examples{
 if (interactive()) {
+op <- options(device.ask.default = FALSE)
 
-library(rattle)
-audit <- read.csv(system.file("csv", "audit.csv", package = "rattle"))
-latticist(audit)
+latticist(CO2)
 
+if (require(rattle)) {
+  invisible(readline("When you are ready..."))
+  audit <- read.csv(system.file("csv", "audit.csv",
+                    package = "rattle"))
+  latticist(audit, new=TRUE)
+}
+
+options(op)
 }
 }
 \keyword{ hplot }

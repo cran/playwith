@@ -21,7 +21,7 @@ latticist <-
              ...)
 {
     title <- paste("Latticist:",
-                   toString(deparse(substitute(dat)), width=24))
+                   toString(deparse(substitute(dat)), width=30))
 
     if (!is.data.frame(dat))
         dat <- as.data.frame(dat)
@@ -51,132 +51,21 @@ latticist <-
         }
     }
 
+    pageExpr <- call("panel.text", 0.5, 0, paste("Latticist ",
+                  packageDescription("playwith")$Version, ". ",
+                  "Select variables below to begin.", sep=""),
+                   pos=3, font=2)
+    pageFn <- function(n) NA
+    body(pageFn) <- as.expression(call("{", pageExpr))
+    plot.call$page <- pageFn
+
     playwith(plot.call = plot.call,
              title=title, ...,
+             latticist=list(),
              labels=rownames(dat),
              bottom.tools=list(latticist=makeLatticistTool(dat)))
     invisible(playDevCur())
 }
-
-marginals <-
-    function(data,
-             reorder = TRUE,
-             subset = TRUE,
-             plot.points = FALSE,
-             ref = TRUE,
-             origin = 0,
-             levels.fos = NULL,
-             xlab = NULL, ylab = NULL,
-             cex = 0.5,
-             ...,
-             as.table = TRUE,
-             subscripts = TRUE)
-{
-    default.scales <- list(relation="free", draw=FALSE)
-    if (!is.data.frame(data))
-        data <- as.data.frame(data)
-    nvar <- ncol(data)
-    factors <- sapply(data, is.categorical)
-    ## apply subset
-    subset <- eval(substitute(subset), data)
-    if (!isTRUE(subset)) data <- data[subset,]
-    if (any(factors)) {
-        facdat <- lapply(data[factors], function(Value)
-                         as.data.frame(table(Value)) )
-        facdat <- do.call(make.groups, facdat)
-        ## order packets by number of levels, same effect as index.cond
-        facdat$which <- with(facdat, reorder(which, which, length))
-        ## reorder factor levels within each group
-        if (reorder)
-          facdat$Value <-
-            with(facdat, reorder(reorder(Value, -Freq), as.numeric(which)))
-        ## make trellis object for factors
-        factobj <-
-            dotplot(Freq ~ Value | which, data=facdat, subscripts=TRUE,
-                    ...,
-                    type=c("p","h"), cex=cex, ref=ref,
-                    levels.fos = levels.fos,
-                    origin = origin,
-                    as.table = as.table,
-                    default.scales = default.scales,
-                    xlab=xlab, ylab=ylab)
-        if (all(factors)) return(factobj)
-    }
-    if (any(!factors)) {
-        numdat <- do.call(make.groups, data[!factors])
-        ## order packets by mean, same effect as index.cond
-        numdat$which <- with(numdat, reorder(which, data, mean, na.rm=TRUE))
-        ## make trellis object for numerics
-        numobj <-
-            densityplot(~ data | which, data=numdat, subscripts=TRUE,
-                        ...,
-                        plot.points=plot.points, ref=ref,
-                        as.table = as.table,
-                        default.scales = default.scales,
-                        xlab=xlab, ylab=ylab)
-        if (FALSE)
-            qqmath(~ data | which, data=numdat, subscripts=TRUE,
-                   ...,
-                   distribution=qunif,
-                   f.value=ppoints(100),
-                   type=c("p", "l"), pch=".", cex=2,
-                   as.table = as.table,
-                   default.scales = default.scales,
-                   xlab=xlab, ylab=ylab)
-
-        if (all(!factors)) return(numobj)
-    }
-    ## construct trellis object with combined layout but no data
-    ## This stores the two trellis objects and uses their
-    ## prepanel and panel functions.
-    ## It would be nicer to actually merge the trellis objects
-    ## (i.e. merge $panel.args, $x.limits, $y.limits, etc)
-    ## -- would still need custom panel function
-    nfactors <- sum(factors)
-    pktnames <- c(dimnames(factobj)$which,
-              dimnames(numobj)$which)
-    pktnames <- factor(pktnames, levels=pktnames)
-    dummyobj <-
-        xyplot(1:ncol(data) ~ 1:ncol(data) | pktnames, subscripts=TRUE,
-               ...,
-               OBJ1 = factobj, OBJ2 = numobj, OFFSET = nfactors,
-               prepanel = function(x, ..., OBJ1, OBJ2, OFFSET) {
-                   n <- x ## which is packet.number()
-                   obj <- OBJ1
-                   if (n > OFFSET) {
-                       obj <- OBJ2
-                       n <- n - OFFSET
-                   }
-                   ## can not use default prepanel with mixed fac/num
-                   xlim <- obj$x.num.limit[[n]]
-                   ylim <- obj$y.num.limit[[n]]
-                   if (any(is.na(xlim))) xlim <- obj$x.limits[[n]]
-                   if (any(is.na(ylim))) ylim <- obj$y.limits[[n]]
-                   ## need to apply axis padding to factors manually
-                   pad <- lattice.getOption("axis.padding")$factor
-                   if (is.categorical(obj$x.limits[[n]]))
-                       xlim <- xlim + ifelse(is.unsorted(xlim), -1, 1) *
-                           c(-pad, pad)
-                   list(xlim=xlim, ylim=ylim)
-               },
-               panel = function(..., OBJ1, OBJ2, OFFSET) {
-                   n <- packet.number()
-                   obj <- OBJ1
-                   if (n > OFFSET) {
-                       obj <- OBJ2
-                       n <- n - OFFSET
-                   }
-                   panel <- obj$panel
-                   if (is.character(panel)) panel <- get(panel)
-                   do.call(panel, trellis.panelArgs(obj, n))
-               },
-               as.table = as.table,
-               default.scales = default.scales,
-               xlab=xlab, ylab=ylab)
-
-    dummyobj
-}
-
 
 makeLatticistTool <- function(dat)
 {
@@ -198,12 +87,12 @@ makeLatticistTool <- function(dat)
     LOTS <- 1000
     HEAPS <- 10000
     MAXPANELS <- 16
-    INIT.NLEVELS <- 5
+    INIT.NLEVELS <- 4
 
     function(playState)
     {
         ## create list to store some settings
-        if (is.null(playState$latticist))
+        if (length(playState$latticist) == 0)
             playState$latticist <- list()
         ## get arguments to current call
         callName <- toString(callArg(playState, 0, eval=FALSE))
@@ -331,7 +220,7 @@ makeLatticistTool <- function(dat)
         #c1 <- stripFactor(c1)
         #c2 <- stripFactor(c2)
         #groups <- stripFactor(groups)
-        
+
         ## set up variables and options
         xvarStr <- deparseOneLine(xvar)
         yvarStr <- deparseOneLine(yvar)
@@ -469,8 +358,8 @@ makeLatticistTool <- function(dat)
             ## parse variables / expressions
             xvar <- tryParse(xvarW$getActiveText())
             yvar <- tryParse(yvarW$getActiveText())
-            if (xonW[["active"]] == FALSE) xvar <- NULL
-            if (yonW[["active"]] == FALSE) yvar <- NULL
+            if (xonW["active"] == FALSE) xvar <- NULL
+            if (yonW["active"] == FALSE) yvar <- NULL
             c1 <- tryParse(c1W$getActiveText())
             c2 <- tryParse(c2W$getActiveText())
             groups <- tryParse(groupsW$getActiveText())
@@ -512,11 +401,11 @@ makeLatticistTool <- function(dat)
                 nPoints <- sum(is.finite(xVal[subsetVal]))
             else if (!is.null(yVal))
                 nPoints <- sum(is.finite(yVal[subsetVal]))
-            
+
             ## discretize
-            nlev <- nLevelsW[["value"]]
-            do.xdisc <- (!is.null(xvar) && !is.categorical(xVal) && xdiscW[["active"]])
-            do.ydisc <- (!is.null(yvar) && !is.categorical(yVal) && ydiscW[["active"]])
+            nlev <- nLevelsW["value"]
+            do.xdisc <- (!is.null(xvar) && !is.categorical(xVal) && xdiscW["active"])
+            do.ydisc <- (!is.null(yvar) && !is.categorical(yVal) && ydiscW["active"])
             do.c1disc <- (!is.null(c1) && !is.categorical(c1Val))
             do.c2disc <- (!is.null(c2) && !is.categorical(c2Val))
             do.gdisc <- (!is.null(groups) && !is.categorical(groupsVal))
@@ -571,7 +460,7 @@ makeLatticistTool <- function(dat)
 
             ## reorder conditioning (TODO: index.cond)
             if (!is.null(c1Val)) {
-#                    if (!is.null(yVar) || !is.null(xVar)) {
+#                    if (!is.null(yVal) || !is.null(xVal)) {
 #                        c1 <- call("reorder", c1,
 #                                   if (!is.null(yVal)) yvar else xvar)
 #                    }
@@ -600,7 +489,7 @@ makeLatticistTool <- function(dat)
             }
             updateMainCall(playState)
             callArg(playState, "subset") <- subset
-                                        #if (!isTRUE(subset)) subset ## interferes with "sub"!
+            ## otherwise "sub" gets renamed to "subset" by match.call!
             callArg(playState, "groups") <- groups
             callArg(playState, "subscripts") <- TRUE
             if (tooManyPanels)
@@ -805,9 +694,9 @@ makeLatticistTool <- function(dat)
                     #    yvar <- call("factor", yvar)
                     #if (is.logical(xVal))
                     #    xvar <- call("factor", xvar)
-                    if (is.logical(xVar))
+                    if (is.logical(xVal))
                       callArg(playState, "horizontal") <- FALSE
-                  
+
                     ## reorder factor levels if more than 2
                     if (is.categorical(yVal) && isUnordered(yvar, yVal)) {
                         if (nlevels(yVal) > 2) {
@@ -882,7 +771,7 @@ makeLatticistTool <- function(dat)
                     if (nPoints >= LOTS) {
                       ## there's a bug in lattice: grouped lines take alpha from points setting
                       if (!is.null(groups) ||
-                          (packageDescription("lattice")$Version > "0.17-10")) 
+                          (packageDescription("lattice")$Version > "0.17-10"))
                         symbol$alpha <- if (nPoints >= HEAPS) 0.1 else 0.3
                     }
                     if (nPoints >= HEAPS) {
@@ -984,13 +873,13 @@ makeLatticistTool <- function(dat)
         doRecompose <- function(widget, playState)
             composePlot(playState)
         doRecomposeOnSelect <- function(widget, playState) {
-            if (widget[["active"]] > -1)
+            if (widget["active"] > -1)
                 composePlot(playState)
         }
         doRecomposeNewXY <- function(widget, playState)
             composePlot(playState, newXY=TRUE)
         doRecomposeNewXYOnSelect <- function(widget, playState) {
-            if (widget[["active"]] > -1)
+            if (widget["active"] > -1)
                 composePlot(playState, newXY=TRUE)
         }
         doLabels <- function(widget, playState) {
@@ -1002,25 +891,25 @@ makeLatticistTool <- function(dat)
             ## TODO: replot if showing labels?
         }
         doLabelsOnSelect <- function(widget, playState) {
-            if (widget[["active"]] > -1)
+            if (widget["active"] > -1)
                 doLabels(widget, playState)
         }
 
         handler.flip <- function(widget, event, playState) {
             if (!isTRUE(playState$plot.ready)) {alarm(); return(FALSE)}
             playState$plot.ready <- FALSE
-            xvarActive <- xvarW[["active"]]
-            yvarActive <- yvarW[["active"]]
-            xdisc <- xdiscW[["active"]]
-            ydisc <- ydiscW[["active"]]
-            xsens <- xonW[["sensitive"]]
-            ysens <- yonW[["sensitive"]]
-            xvarW[["active"]] <- yvarActive
-            yvarW[["active"]] <- xvarActive
-            xdiscW[["active"]] <- ydisc
-            ydiscW[["active"]] <- xdisc
-            xonW[["sensitive"]] <- ysens
-            yonW[["sensitive"]] <- xsens
+            xvarActive <- xvarW["active"]
+            yvarActive <- yvarW["active"]
+            xdisc <- xdiscW["active"]
+            ydisc <- ydiscW["active"]
+            xsens <- xonW["sensitive"]
+            ysens <- yonW["sensitive"]
+            xvarW["active"] <- yvarActive
+            yvarW["active"] <- xvarActive
+            xdiscW["active"] <- ydisc
+            ydiscW["active"] <- xdisc
+            xonW["sensitive"] <- ysens
+            yonW["sensitive"] <- xsens
             playState$plot.ready <- TRUE
             composePlot(playState)
             return(FALSE)
@@ -1028,14 +917,14 @@ makeLatticistTool <- function(dat)
         handler.superpose <- function(widget, event, playState) {
             if (!isTRUE(playState$plot.ready)) {alarm(); return(FALSE)}
             playState$plot.ready <- FALSE
-            c1Active <- c1W[["active"]]
-            c2Active <- c2W[["active"]]
+            c1Active <- c1W["active"]
+            c2Active <- c2W["active"]
             if (c1Active <= 1) return()
-            groupsW[["active"]] <- c1Active
+            groupsW["active"] <- c1Active
             ## TODO: combine two conditioning variables?
-            c1W[["active"]] <- 0
-            c2W[["active"]] <- 0
-            widget[["visible"]] <- FALSE
+            c1W["active"] <- 0
+            c2W["active"] <- 0
+            widget["visible"] <- FALSE
             playState$plot.ready <- TRUE
             composePlot(playState)
             return(FALSE)
@@ -1043,16 +932,16 @@ makeLatticistTool <- function(dat)
         handler.explode <- function(widget, event, playState) {
             if (!isTRUE(playState$plot.ready)) {alarm(); return(FALSE)}
             playState$plot.ready <- FALSE
-            grActive <- groupsW[["active"]]
+            grActive <- groupsW["active"]
             if (grActive <= 1) return()
-            c1Active <- c1W[["active"]]
-            c2Active <- c2W[["active"]]
+            c1Active <- c1W["active"]
+            c2Active <- c2W["active"]
             if (c1Active <= 1)
-                c1W[["active"]] <- grActive
+                c1W["active"] <- grActive
             else
-                c2W[["active"]] <- grActive
-            groupsW[["active"]] <- 0
-            widget[["visible"]] <- FALSE
+                c2W["active"] <- grActive
+            groupsW["active"] <- 0
+            widget["visible"] <- FALSE
             playState$plot.ready <- TRUE
             composePlot(playState)
             return(FALSE)
@@ -1109,9 +998,9 @@ makeLatticistTool <- function(dat)
                                 label, '</u></span>', sep=""))
             butt$add(tmp)
                                         #butt <- gtkButtonNew()
-                                        #butt[["relief"]] <- GtkReliefStyle["none"]
-                                        #butt[["can-default"]] <- FALSE
-                                        #butt[["height-request"]] <- 12
+                                        #butt["relief"] <- GtkReliefStyle["none"]
+                                        #butt["can-default"] <- FALSE
+                                        #butt["height-request"] <- 12
                                         #butt$modifyStyle(GtkRcStyle ## TODO reduce padding
             butt
         }
@@ -1125,7 +1014,7 @@ makeLatticistTool <- function(dat)
         xyBox$packStart(gtkLabel(" Variables / expressions on axes:"),
                         expand=FALSE)
         xyflipW <- niceButton("switch")
-        xyflipW[["visible"]] <- !is.null(xvar) || !is.null(yvar)
+        xyflipW["visible"] <- !is.null(xvar) || !is.null(yvar)
         gSignalConnect(xyflipW, "button-press-event",
                        handler.flip, data=playState)
         xyBox$packStart(xyflipW)
@@ -1133,18 +1022,18 @@ makeLatticistTool <- function(dat)
         ## Y VAR
         yvarBox <- gtkHBox()
         yonW <- gtkCheckButton("y= ")
-        yonW[["active"]] <- TRUE
-        yonW[["sensitive"]] <- !is.null(yvar)
+        yonW["active"] <- TRUE
+        yonW["sensitive"] <- !is.null(yvar)
         gSignalConnect(yonW, "clicked",
                        doRecomposeNewXY, data=playState)
         yvarBox$packStart(yonW, expand=FALSE)
         yvarW <- gtkComboBoxEntryNewText()
         yvarW$show()
-        yvarW[["width-request"]] <- 100
+        yvarW["width-request"] <- 100
         for (item in varexprs) yvarW$appendText(item)
         index <- match(deparseOneLine(yvar), varexprs)
         if (is.na(index)) index <- 1
-        yvarW[["active"]] <- (index - 1)
+        yvarW["active"] <- (index - 1)
         ## "changed" emitted on typing and selection
         gSignalConnect(yvarW, "changed",
                        doRecomposeNewXYOnSelect, data=playState)
@@ -1152,7 +1041,7 @@ makeLatticistTool <- function(dat)
                        doRecomposeNewXY, data=playState)
         yvarBox$packStart(yvarW)
         ydiscW <- gtkCheckButton("discretize")
-        ydiscW[["active"]] <- ydisc
+        ydiscW["active"] <- ydisc
         gSignalConnect(ydiscW, "clicked",
                        doRecomposeNewXY, data=playState)
         yvarBox$packStart(ydiscW, expand=FALSE)
@@ -1161,18 +1050,18 @@ makeLatticistTool <- function(dat)
         ## X VAR
         xvarBox <- gtkHBox()
         xonW <- gtkCheckButton("x= ")
-        xonW[["active"]] <- TRUE
-        xonW[["sensitive"]] <- !is.null(xvar)
+        xonW["active"] <- TRUE
+        xonW["sensitive"] <- !is.null(xvar)
         gSignalConnect(xonW, "clicked",
                        doRecomposeNewXY, data=playState)
         xvarBox$packStart(xonW, expand=FALSE)
         xvarW <- gtkComboBoxEntryNewText()
         xvarW$show()
-        xvarW[["width-request"]] <- 100
+        xvarW["width-request"] <- 100
         for (item in varexprs) xvarW$appendText(item)
         index <- match(deparseOneLine(xvar), varexprs)
         if (is.na(index)) index <- 1
-        xvarW[["active"]] <- (index - 1)
+        xvarW["active"] <- (index - 1)
         ## "changed" emitted on typing and selection
         gSignalConnect(xvarW, "changed",
                        doRecomposeNewXYOnSelect, data=playState)
@@ -1180,7 +1069,7 @@ makeLatticistTool <- function(dat)
                        doRecomposeNewXY, data=playState)
         xvarBox$packStart(xvarW)
         xdiscW <- gtkCheckButton("discretize")
-        xdiscW[["active"]] <- xdisc
+        xdiscW["active"] <- xdisc
         gSignalConnect(xdiscW, "clicked",
                        doRecomposeNewXY, data=playState)
         xvarBox$packStart(xdiscW, expand=FALSE)
@@ -1192,12 +1081,12 @@ makeLatticistTool <- function(dat)
         xyOptsBox$packStart(gtkLabel(" Aspect:"), expand=FALSE)
         aspectW <- gtkComboBoxEntryNewText()
         aspectW$show()
-        aspectW[["width-request"]] <- 50
+        aspectW["width-request"] <- 50
         for (item in aspectopts) aspectW$appendText(item)
         if (!is.null(aspectVal)) {
             index <- match(aspectVal, aspectopts)
             if (is.na(index)) index <- 0
-            aspectW[["active"]] <- (index - 1)
+            aspectW["active"] <- (index - 1)
         }
         ## "changed" emitted on typing and selection
         gSignalConnect(aspectW, "changed",
@@ -1209,8 +1098,8 @@ makeLatticistTool <- function(dat)
         ## LEVELS
         xyOptsBox$packStart(gtkLabel("Levels:"), expand=FALSE)
         nLevelsW <- gtkSpinButton(min=1, max=16, step=1)
-        nLevelsW[["width-request"]] <- 40
-        nLevelsW[["digits"]] <- 0
+        nLevelsW["width-request"] <- 40
+        nLevelsW["digits"] <- 0
         nLevelsW$setValue(nLevels)
         gSignalConnect(nLevelsW, "value-changed",
                        doRecompose, data=playState)
@@ -1222,11 +1111,11 @@ makeLatticistTool <- function(dat)
 
         ## CONDITIONING VARS
         cvarsBox <- gtkVBox()
-        cvarsBox[["sensitive"]] <- !is.null(xvar) || !is.null(yvar)
+        cvarsBox["sensitive"] <- !is.null(xvar) || !is.null(yvar)
         cBox <- gtkHBox()
         cBox$packStart(gtkLabel(" Conditioning:"), expand=FALSE)
         superposeW <- niceButton("superpose")
-        superposeW[["visible"]] <- !is.null(c1)
+        superposeW["visible"] <- !is.null(c1)
         gSignalConnect(superposeW, "button-press-event",
                        handler.superpose, data=playState)
         cBox$packStart(superposeW)
@@ -1235,11 +1124,11 @@ makeLatticistTool <- function(dat)
         c1Box <- gtkHBox()
         c1W <- gtkComboBoxEntryNewText()
         c1W$show()
-        c1W[["width-request"]] <- 100
+        c1W["width-request"] <- 100
         for (item in varexprs) c1W$appendText(item)
         index <- match(deparseOneLine(c1), varexprs)
         if (is.na(index)) index <- 1
-        c1W[["active"]] <- (index - 1)
+        c1W["active"] <- (index - 1)
         ## "changed" emitted on typing and selection
         gSignalConnect(c1W, "changed",
                        doRecomposeOnSelect, data=playState)
@@ -1251,12 +1140,12 @@ makeLatticistTool <- function(dat)
         c2Box <- gtkHBox()
         c2W <- gtkComboBoxEntryNewText()
         c2W$show()
-        c2W[["sensitive"]] <- !is.null(c1)
-        c2W[["width-request"]] <- 100
+        c2W["sensitive"] <- !is.null(c1)
+        c2W["width-request"] <- 100
         for (item in varexprs) c2W$appendText(item)
         index <- match(deparseOneLine(c2), varexprs)
         if (is.na(index)) index <- 1
-        c2W[["active"]] <- (index - 1)
+        c2W["active"] <- (index - 1)
         ## "changed" emitted on typing and selection
         gSignalConnect(c2W, "changed",
                        doRecomposeOnSelect, data=playState)
@@ -1269,13 +1158,13 @@ makeLatticistTool <- function(dat)
         scalesBox$packStart(gtkLabel("Scales:"), expand=FALSE)
         scalesW <- gtkComboBoxNewText()
         scalesW$show()
-        scalesW[["sensitive"]] <- !is.null(c1)
-        scalesW[["width-request"]] <- 80
+        scalesW["sensitive"] <- !is.null(c1)
+        scalesW["width-request"] <- 80
         for (item in scalesopts) scalesW$appendText(item)
         if (!is.null(scalesVal)) {
             index <- match(scalesVal, scalesopts)
             if (is.na(index)) index <- 0
-            scalesW[["active"]] <- (index - 1)
+            scalesW["active"] <- (index - 1)
         }
         ## "changed" emitted on typing and selection
         gSignalConnect(scalesW, "changed",
@@ -1288,12 +1177,12 @@ makeLatticistTool <- function(dat)
 
         ## GROUPS
         gvarsBox <- gtkVBox()
-        gvarsBox[["sensitive"]] <- !is.null(xvar) || !is.null(yvar)
+        gvarsBox["sensitive"] <- !is.null(xvar) || !is.null(yvar)
         ## GROUPS
         grBox <- gtkHBox()
         grBox$packStart(gtkLabel(" Groups:"), expand=FALSE)
         explodeW <- niceButton("explode")
-        explodeW[["visible"]] <- !is.null(groups)
+        explodeW["visible"] <- !is.null(groups)
         gSignalConnect(explodeW, "button-press-event",
                        handler.explode, data=playState)
         grBox$packStart(explodeW)
@@ -1302,11 +1191,11 @@ makeLatticistTool <- function(dat)
         gBox <- gtkHBox()
         groupsW <- gtkComboBoxEntryNewText()
         groupsW$show()
-        groupsW[["width-request"]] <- 100
+        groupsW["width-request"] <- 100
         for (item in varexprs) groupsW$appendText(item)
         index <- match(deparseOneLine(groups), varexprs)
         if (is.na(index)) index <- 1
-        groupsW[["active"]] <- (index - 1)
+        groupsW["active"] <- (index - 1)
         ## "changed" emitted on typing and selection
         gSignalConnect(groupsW, "changed",
                        doRecomposeOnSelect, data=playState)
@@ -1321,11 +1210,11 @@ makeLatticistTool <- function(dat)
         gvarsBox$packStart(laBox, expand=FALSE, padding=1)
         labelsW <- gtkComboBoxEntryNewText()
         labelsW$show()
-        labelsW[["width-request"]] <- 100
+        labelsW["width-request"] <- 100
         for (item in labelsopts) labelsW$appendText(item)
         index <- match(labelsSetting, labelsopts)
         if (is.na(index)) index <- 0
-        labelsW[["active"]] <- (index - 1)
+        labelsW["active"] <- (index - 1)
         ## "changed" emitted on typing and selection
         gSignalConnect(labelsW, "changed",
                        doLabelsOnSelect, data=playState)
@@ -1346,18 +1235,18 @@ makeLatticistTool <- function(dat)
         if (is.call.to(mainCall(playState), "barchart") &&
             !is.null(xvar) && !is.null(yvar))
             showSub <- FALSE
-        subsetSelW[["visible"]] <- showSub
+        subsetSelW["visible"] <- showSub
         gSignalConnect(subsetSelW, "button-press-event",
                        handler.subsetSelect, data=playState)
         subsetBox$packStart(subsetSelW)
         setBox$packStart(subsetBox, expand=FALSE, padding=1)
         subsetW <- gtkComboBoxEntryNewText()
         subsetW$show()
-        subsetW[["width-request"]] <- -1
+        subsetW["width-request"] <- -1
         for (item in subsetopts) subsetW$appendText(item)
         index <- match(deparseOneLine(subset), subsetopts)
         if (is.na(index)) index <- 1 ## should never happen
-        subsetW[["active"]] <- (index - 1)
+        subsetW["active"] <- (index - 1)
         ## "changed" emitted on typing and selection
         gSignalConnect(subsetW, "changed",
                        doRecomposeOnSelect, data=playState)
@@ -1369,13 +1258,13 @@ makeLatticistTool <- function(dat)
         hotsetBox <- gtkHBox()
         hotsetBox$packStart(gtkLabel(" Hot-set:"), expand=FALSE)
         hotsetSelW <- niceButton("interactive...")
-        hotsetSelW[["visible"]] <- FALSE #!is.null(xvar) || !is.null(yvar)
+        hotsetSelW["visible"] <- FALSE #!is.null(xvar) || !is.null(yvar)
         hotsetBox$packStart(hotsetSelW)
         setBox$packStart(hotsetBox, expand=FALSE, padding=1)
         hotsetW <- gtkComboBoxEntryNewText()
         hotsetW$show()
-        hotsetW[["sensitive"]] <- FALSE
-        hotsetW[["width-request"]] <- -1
+        hotsetW["sensitive"] <- FALSE
+        hotsetW["width-request"] <- -1
         setBox$packStart(hotsetW, expand=FALSE)
         box$packStart(setBox, expand=FALSE, padding=1)
 
