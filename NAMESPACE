@@ -1,9 +1,7 @@
 
 import(RGtk2)
-# note cairoDevice::asCairoDevice calls require(RGtk2)
 import(gridBase)
-import(graphics)
-#importFrom(graphics, par, plot)
+importFrom(graphics, par, plot)
 import(grDevices)
 importFrom(utils, head, modifyList)
 
@@ -17,7 +15,8 @@ export(
 export(
        latticist,
        reorderByFreq,
-       cutEq)
+       cutEq,
+       try.prepanel.loess)
 
 # settings
 export(
