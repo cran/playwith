@@ -4,34 +4,33 @@
 \alias{playRectInput}
 \title{Get point, line or rect input from playwith user}
 \description{
-  Part of the \code{\link{playwith}} Application Programming Interface.
+  Part of the \pkg{playwith} Application Programming Interface.
 }
 \usage{
-playPointInput(playState, prompt = "Click on the plot")
-playLineInput(playState, prompt = "Click and drag to define a line")
-playRectInput(playState, prompt = "Click and drag to define a rectangular region",
-	scales = c("x", "y"))
+playPointInput(playState = playDevCur(), prompt)
+playLineInput(playState = playDevCur(), prompt)
+playRectInput(playState = playDevCur(), prompt)
 }
 \arguments{
   \item{playState}{ a \code{\link{playState}} object representing the plot, window and device. }
   \item{prompt}{ text to display in the prompt. }
-  \item{scales}{ one or more of \code{"x"} and \code{"y"}, 
-	  constraining the dimensions of the region to select.
-	  E.g. if \code{scales="x"} then a section along the x-axis is selected,
-	  as might be appropriate for a time series.
-  }
+%  \item{scales}{ one or more of \code{"x"} and \code{"y"},
+%	  constraining the dimensions of the region to select.
+%	  E.g. if \code{scales="x"} then a section along the x-axis is selected,
+%	  as might be appropriate for a time series.
+%  }
 }
 \details{
 	\code{playPointInput} is similar to \code{\link{locator}}, but
 	returns native coordinates in whichever plot space was clicked on.
 	Device coordinates and normalised device coordinates are also available.
-	
+
 	\code{playRectInput} and \code{playLineInput} allow the user to
 	interactively draw a rectangle or line.
 }
 \value{
 	All these functions return \code{NULL} if the user cancelled (e.g. by right-clicking).
-	
+
 	The return value is a list with:
 	\item{\code{space}}{
 		character, specifies the plot space in which the user clicked or dragged.
@@ -51,27 +50,27 @@ playRectInput(playState, prompt = "Click and drag to define a rectangular region
 		normalised device coordinates of the point or shape.
 	}
 	\item{\code{is.click}}{
-		logical, whether it was a click 
+		logical, whether it was a click
 		(so probably should not be treated as a rectangle or line).
 		This is not returned by \code{playPointInput}.
 	}
 	\item{\code{modifiers}}{
 		a \code{flag} representing which modifier keys were
 		pressed during the click (or at the end of a drag).
-		E.g. to test for Shift key: 
+		E.g. to test for Shift key:
 		\code{if (foo$modifiers & GdkModifierType["shift-mask"])}.
 		See \code{\link[RGtk2]{enums-and-flags}}.
 	}
 }
 \author{ Felix Andrews \email{felix@nfrac.org}  }
-\seealso{ \code{\link{playSelectData}}, \code{\link{playwith.API}} }
+\seealso{ \code{\link{playSelectData}}, \link{playwith.API} }
 \examples{
 if (interactive()) {
 
 library(lattice)
 playwith(xyplot(Sepal.Width ~ Petal.Width | Species, data = iris))
-playPointInput(playDevCur())
-playRectInput(playDevCur())
+playPointInput()
+playRectInput()
 
 }
 }

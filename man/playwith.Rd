@@ -1,11 +1,9 @@
 \name{playwith}
 \alias{playwith}
+\alias{plotOnePage}
 \title{An interactive plot GUI}
 \description{
-  Open a graphical user interface for viewing and interacting with \R plots.
-  It tries to work out the structure of a plot, in order to interact with it.
-  The built-in features include: navigating the data space, identifying data points,
-  editing and annotating the plot, and saving to a file. New tools can be defined.
+  A graphical user interface for viewing and interacting with \R plots.
 }
 \usage{
 playwith(expr,
@@ -14,45 +12,51 @@ playwith(expr,
          labels = NULL,
          data.points = NULL,
          viewport = NULL,
-         top.tools = playwith.getOption("top.tools"),
-         left.tools = playwith.getOption("left.tools"),
-         bottom.tools = playwith.getOption("bottom.tools"),
-         right.tools = playwith.getOption("right.tools"),
          parameters = list(),
+         tools = list(),
+         update.actions = list(),
+         init.actions = list(),
          ...,
          width = playwith.getOption("width"),
          height = playwith.getOption("height"),
          pointsize = playwith.getOption("pointsize"),
-         modal = FALSE,
-         on.close = NULL,
-         show.call = TRUE,
          eval.args = playwith.getOption("eval.args"),
-         invert.match = FALSE,
-         envir = parent.frame(),
+         on.close = playwith.getOption("on.close"),
+         modal = FALSE,
+         link.to = NULL,
          playState = if (!new) playDevCur(),
          plot.call,
          main.function)
 }
 \arguments{
   \item{expr}{ an expression to create a plot, like \code{plot(mydata)}.
-    Note, this can have lots of arguments, just like a normal plot call (see examples).
-    Could also be a chunk of code in \code{\{}braces\code{\}}. }
-  \item{new}{ if \code{TRUE} open in a new window, otherwise replace the current window (if one exists). }
-  \item{title}{ optional window title. If a plot window exists with the same title,
-    the new plot will appear in that window, replacing the old plot. }
-  \item{labels}{ a character vector of labels for data points, for use in \code{\link{identify}}.
-    If missing, it will be guessed from the plot call arguments. }
-  \item{data.points}{ a data frame with elements "x" and "y" (or other suitable plotting structure)
-    giving locations of data points, in case these can not be guessed from the plot call arguments. }
-  \item{viewport}{ name or \code{\link[grid]{vpPath}} of the \code{\link[grid]{viewport}}
-    representing the data space. This allows interaction with grid graphics plots
-    (but ignore this for Lattice plots). }
-  \item{top.tools, left.tools, bottom.tools, right.tools}{
-    each a list of tools for toolbars at the top, left, bottom or right sides of the window.
-    Each list element should be the name of one of the pre-defined tools,
-    or a function to construct a \code{\link[RGtk2]{gtkToolItem}}.
-    See \link{playTools} for a description of the pre-defined tools,
-    and \link{playwith.API} for help on defining new tools.
+    Note, arguments and nested calls are allowed, just like a normal
+    plot call (see examples).
+    Could also be a chunk of code in \code{\{}braces\code{\}}.
+    For quoted calls, use the \code{plot.call} argument.
+  }
+  \item{new}{ if \code{TRUE} open in a new window, otherwise replace the
+    current window (if one exists).
+  }
+  \item{title}{ optional window title; otherwise derived from the plot
+    call.
+  }
+  \item{labels}{ a character vector of labels for data points.
+    If missing, it will be guessed from the plot call arguments if
+    possible.
+  }
+  \item{data.points}{ a data frame (or other suitable plotting
+    structure: see \code{\link{xy.coords}}) giving locations of data
+    points, in case these can not be guessed from the plot call
+    arguments. If a data frame, extra variables may be included; these
+    can be used to label or locate points in the GUI. Note, if a
+    suitable data argument is found in the plot call, that plays the
+    same role.
+  }
+  \item{viewport}{ name or \code{\link[grid]{vpPath}} of the
+    \code{\link[grid]{viewport}} representing the data space. This
+    allows interaction with grid graphics plots (but ignore this for
+    Lattice plots). Experimental: can also be a named list.
   }
   \item{parameters}{
     defines simple tools for controlling values of any parameters
@@ -71,19 +75,75 @@ playwith(expr,
       \item \code{logical}: creates a checkbox.
     }
   }
-  \item{\dots}{ extra arguments are stored in the \code{\link{playState}} object.
-    These can then be accessed by user-defined tools. The default tools will recognise the following
-    extra arguments:
+  \item{tools}{ a list of tool specifications. These are technically
+    \code{\link[RGtk2]{GtkActionEntry}}s but should be specified as
+    lists with the following structure. Elements can be specified in
+    this order, or named (as with a function call).
     \describe{
-      \item{\code{show.tooltips}}{
-	show tooltips for toolbar items. This uses the GTK event loop internally,
-	which might, occasionally, cause the R terminal to freeze.
+      \item{\code{name}}{
+	The name of the action (used internally to control
+	the action state, or in a custom UI XML file). This item is
+	required and must be the first element. All other elements are
+	optional.
       }
-      \item{\code{page}}{
-	In multi-page Lattice plots, this will set the initial page to display.
+      \item{\code{stock_id}}{
+	The stock icon ID, or the name of an icon from the
+	icon theme. See \code{unlist(gtkStockListIds())} or
+	\url{http://library.gnome.org/devel/gtk/unstable/gtk-Stock-Items.html}
+	for a list.
+      }
+      \item{\code{label}}{
+	The label for the action. If label is NULL, the default
+	label for the given stock.id is used.
+      }
+      \item{\code{accelerator}}{
+	The accelerator for the action, in the format
+	understood by \code{\link[RGtk2]{gtkAcceleratorParse}}. See
+	\link[RGtk2]{gdkKeySyms}.
+      }
+      \item{\code{tooltip}}{
+	The tooltip for the action.
+      }
+      \item{\code{callback}}{
+	The function to call when the action is activated.
+      }
+      \item{\code{is_active}}{
+	Only for toggle actions: sets the initial state (TRUE / FALSE).
+      }
+      \item{\code{update.action}, \code{init.action}}{
+	If present these items must be named. Their values are included
+	in the \code{update.actions} and \code{init.actions} lists.
+      }
+    }
+  }
+  \item{update.actions}{ a list of actions to be run \emph{after} the plot is
+    drawn (and each time it is redrawn). These may be functions,
+    or names of functions, or expressions. Functions are passed one
+    argument, which is the \code{\link{playState}}. Note, these
+    are in addition to any given in
+    \code{\link{playwith.options}("update.actions")}.
+  }
+  \item{init.actions}{a list of actions to be run \emph{before} the plot is
+    drawn, whenever the plot type changes or its data changes. These are
+    not run when only simple arguments to the call change, but they are
+    run whenever the plot call is edited manually. Same format
+    as \code{update.actions}.
+  }
+  \item{\dots}{ extra arguments are stored in the \code{\link{playState}} object.
+    These can then be accessed by tools. The default tools
+    will recognise the following extra arguments:
+    \describe{
+      \item{\code{click.mode}}{ sets the initial action when clicking
+	and dragging on the plot: one of \code{"Zoom"},
+	\code{"Identify"}, \code{"Brush"}, \code{"Annotation"}, or
+	\code{"Arrow"}.
       }
       \item{\code{time.mode}}{ whether the plot is to start in "time mode",
-	with navigation along the x-axis.
+	with navigation along the x-axis. If \code{NA}, it will guess
+	whether to start in time.mode based on whether the current plot
+	looks like a time series plot (but this can chew some extra
+	memory). The default is taken from
+	\code{\link{playwith.options}("time.mode")}.
       }
       \item{\code{time.vector}}{
 	a vector defining discrete times, as numeric,
@@ -103,86 +163,91 @@ playwith(expr,
 	\code{time.mode.page.incr} sets the number of steps to jump
 	if the user clicks on the scroll bar.
       }
-      \item{\code{label.style}}{
-	output from \code{\link[grid]{gpar}}, specifying the style of labels.
-	e.g. \code{gpar(cex=1.5, fontface="italic", fontfamily="serif")}.
+      \item{\code{page}}{
+	In multi-page Lattice plots, this will set the initial page to display.
       }
       \item{\code{label.offset}}{
 	the distance from a data point to its identifying label.
-	Can be numeric, in units of characters, or
-	a grid \code{\link[grid]{unit}}.
-	Default is 0.5, or \code{unit(0.5, "char")}.
+	Numeric, in units of character widths.
       }
-      \item{\code{arrow.style}}{
-	output from \code{\link[grid]{gpar}}, specifying the style of arrows.
-	e.g. \code{gpar(lwd=2, col="red", alpha=0.5)}.
+      \item{\code{arrow}}{
+	a list with arguments to \code{\link[lattice]{panel.arrows}},
+	specifying the type of arrows to draw.
+	e.g. \code{list(ends="both", type="closed")}.
       }
-      \item{\code{arrow.arrow}}{
-	output from \code{\link[grid]{arrow}}, specifying the type of arrows to draw.
-	e.g. \code{arrow(ends="both", type="closed")}.
+      \item{\code{show.tooltips}}{
+	show tooltips for toolbar items. This uses the GTK event loop internally,
+	which might, occasionally, cause the R terminal to freeze.
       }
-      \item{\code{annotation.mode}, \code{clip.annotations},
+      \item{ \code{show.toolbars}, \code{show.statusbar},
+	\code{page.annotation}, \code{clip.annotations},
 	\code{keep}, \code{stay.on.top}}{
-	set the corresponding window options.
-	All are logical except \code{annotation.mode} which can be
-	either \code{"page"} or \code{"plot"} (the default).
+	set the corresponding window options. All are logical. Defaults
+	are taken from \code{\link{playwith.options}}.
       }
     }
   }
-  \item{width, height}{ initial size of the plot device in inches. }
-  \item{pointsize}{ default point size for text, used in the
-    \code{\link[cairoDevice]{Cairo}} device. }
-  \item{modal}{ whether the window is modal: if \code{TRUE},
-    the session will freeze until the window is closed. }
-  \item{on.close}{ a function to be called when the user closes the plot
-    window. The \code{\link{playState}} object
-    will passed to the function. If the function returns \code{TRUE},
-    the window will not be closed. }
-  \item{show.call}{ set to \code{FALSE} to hide the plot call text-box
-    ("address bar") and associated buttons.}
+  \item{width, height}{ initial size of the plot device in inches.
+  }
+  \item{pointsize}{ default point size for text in the
+    \code{\link[cairoDevice]{Cairo}} device.
+  }
   \item{eval.args}{ whether to evaluate the plot call arguments: can be
     \code{TRUE}, \code{FALSE}, \code{NA} (don't eval global vars)
     or a \link[=regex]{regular expression} matching symbols to evaluate.
-    See below. }
-  \item{invert.match}{ whether to evaluate arguments that do NOT match
-    the  regular expression given in \code{eval.args}. }
-  \item{envir}{ \code{\link{environment}} to use in evaluating the call
-    arguments (see \code{eval.args}) }
+    Or a list. See below.
+  }
+  \item{on.close}{ a function to be called when the user closes the plot
+    window. The \code{\link{playState}} object
+    will passed to the function. If the function returns \code{TRUE},
+    the window will not be closed.
+  }
+  \item{modal}{ whether the window is modal: if \code{TRUE},
+    the session will freeze until the window is closed.
+  }
+  \item{link.to}{ an existing \code{playState} (i.e. \code{playwith}
+    plot) to link to. The set of brushed data points will then be
+    synchronised between them. It is assumed that the data subscripts of
+    the two plots correspond directly. Links can be broken with
+    \code{\link{playUnlink}}.
+  }
   \item{playState}{ the \code{\link{playState}} object for an existing plot window.
     If given, the new plot will appear in that window, replacing the old plot.
-    This over-rides the \code{new} argument.}
+    This over-rides the \code{new} argument.
+  }
   \item{plot.call}{ a plot call (\code{\link{call}} object), if given
-    this is used instead of \code{expr}. }
+    this is used instead of \code{expr}.
+  }
   \item{main.function}{ the function (or its name) appearing in the call
-    which accepts typical plot arguments like \code{xlim} and
+    which accepts typical plot arguments like \code{xlim} or
     \code{ylab}. This will only be needed in unusual cases when the
-    default guess fails. }
+    default guess fails.
+  }
 }
 \details{
   This function opens a GTK+ window containing a plot device
-  (from the \code{cairoDevice} package) and several toolbars.
+  (from the \pkg{cairoDevice} package), a menubar and toolbars.
   There is a call toolbar (similar to the "address bar" of a web browser) at the top,
-  showing the current plot call, which can also be edited in-place.
+  showing the current plot call, which can be edited in-place.
   Then there are up to four toolbars, one on each side of the plot.
-  The tools to be placed in these four toolbars can be specified
-  if necessary.
+  The user interface is customisable: see \code{\link{playwith.options}}.
 
   With the \code{\link{autoplay}} facility, \code{playwith} can function
   like a default graphics device (although it is not technically a
   graphics device itself, it is a wrapper around one).
 
-  See \link{playTools} for a description of the pre-defined tools,
-  and \link{playwith.API} for help on defining new tools.
+  See \link{playwith.API} for help on controlling the plot once open, as
+  well as defining new tools.
   For the special case of tools to control parameter values, it is possible
   to create the tools automatically using the \code{parameters} argument.
 
   Four types of plots are handled somewhat differently:
   \itemize{
-    \item Lattice graphics: recognised by returning an object of class
+    \item \pkg{Lattice} graphics: recognised by returning an object of class
     \code{trellis}. This is the best-supported case.
-    \item ggplot2 graphics: recognised by returning an object of class \code{ggplot}.
+    \item \pkg{ggplot2} graphics: recognised by returning an object of class \code{ggplot}.
     This case is rather poorly supported.
-    \item other grid graphics: you must give the \code{viewport}
+    \item other \pkg{grid} graphics: you must give the \code{viewport}
     argument to enable interaction.
     \item base graphics: this is the default case. If a multiple-plot
     layout is used, interaction can only work in the last sub-plot, i.e.
@@ -204,7 +269,8 @@ playwith(expr,
   If identification of data points is not required, passing
   \code{data.points = NA, labels = NA} may speed things up.
 
-  Some lattice functions require \code{subscripts = TRUE} in order to correctly
+  Some lattice functions need to be called with \code{subscripts = TRUE}
+  in order to correctly
   identify points in a multiple-panel layout. Otherwise the subscripts used will then
   refer to the data in each panel separately, rather than the original dataset.
   In this case a warning dialog box will be shown.
@@ -235,33 +301,44 @@ playwith(expr,
   as with \code{eval.args=TRUE}. In this case you can set \code{invert.match=TRUE}
   to store variables that are not matched.
   For example \code{eval.args="^tmp"} will store variables whose names
-  begin with "tmp"; \code{eval.args="^foo$", invert.match=TRUE} will store
+  begin with "tmp"; \code{eval.args=list("^foo$", invert.match=TRUE)} will store
   everything except \code{foo}.
 
-  \emph{Warning:} function calls appearing in the plot call will be evaluated each
+  \emph{Note:} function calls appearing in the plot call will be evaluated each
   time the plot is updated -- so random data as in \code{plot(rnorm(100))}
   will keep changing, with confusing consequences! You should therefore
   generate random data prior to the plot call. Changes to variables
-  in the workspace (if they are not stored locally) may also cause inconsistencies in previously generated
-  plots.
+  in the workspace (if they are not stored locally) may also cause
+  inconsistencies in previously generated plots.
+
+  \emph{Warning:} the playwith device will tend to make itself the active
+  device any time it is clicked on, so be careful if any other devices
+  are left open.
 }
 \value{
   \code{playwith} invisibly returns the \code{\link{playState}} object representing
-  the plot, window and device.
+  the plot, window and device. The result of the plot call is available
+  as component \code{$result}.
 }
 \author{ Felix Andrews \email{felix@nfrac.org} }
-\seealso{ \code{\link{autoplay}}, \link{playTools}, \link{playwith.API},
-  \code{\link{playwith.options}}, \code{\link{latticist}} }
+\seealso{
+  \code{\link{playwith.options}},
+  \code{\link{autoplay}},
+  \code{\link{latticist}},
+  \link{playwith.API}
+}
 \examples{
 if (interactive()) {
 options(device.ask.default = FALSE)
 
 ## Scatterplot (Lattice graphics).
 ## Labels are taken from rownames of data.
-## Just click on the plot to identify points.
+## Right-click on the plot to identify points,
+## or switch to Identify mode and left-click.
 playwith(xyplot(Income ~ log(Population / Area),
    data = data.frame(state.x77), groups = state.region,
    type = c("p", "smooth"), span = 1, auto.key = TRUE,
+   xlab = "Population density, 1974 (log scale)",
    ylab = "Income per capita, 1974"))
 
 ## Scatterplot (base graphics); similar.
@@ -269,35 +346,44 @@ urbAss <- USArrests[,c("UrbanPop", "Assault")]
 playwith(plot(urbAss, panel.first = lines(lowess(urbAss)),
    col = "blue", main = "Assault vs urbanisation",
    xlab = "Percent urban population, 1973",
-   ylab = "Assault arrests (per 100,000), 1973"))
+   ylab = "Assault arrests per 100k, 1973"))
 
 ## Time series plot (Lattice).
 ## Date-time range can be entered directly in "time mode"
 ## (supports numeric, Date, POSIXct, yearmon and yearqtr).
-## Click and drag to zoom in; right-click to zoom out;
-## and use the scrollbar to move along the x-axis.
+## Click and drag to zoom in, holding Shift to constrain;
+## or use the scrollbar to move along the x-axis.
 library(zoo)
 playwith(xyplot(sunspots ~ yearmon(time(sunspots)),
-                xlim = c(1900, 1930), type = "l"))
+                xlim = c(1900, 1930), type = "l"),
+         time.mode = TRUE)
 
 ## Time series plot (base graphics); similar.
 ## Custom labels are passed directly to playwith.
-## Label style can also be set with playwith.options(),
-## or from a menu item inside the window.
+## Note that label style can be set from a menu item.
 tt <- time(treering)
 treeyears <- paste(abs(tt) + (tt <= 0),
                   ifelse(tt > 0, "CE", "BCE"))
 playwith(plot(treering, xlim = c(1000, 1300)),
-   labels = treeyears, label.style = gpar(col="red",
-      fontfamily = "HersheySans", cex = 0.7))
+   labels = treeyears, time.mode = TRUE)
 
 ## Multi-panel Lattice plot.
-## Need subscripts=TRUE to correctly identify points.
-## Scales are "same" so zooming affects all panels.
+## Need subscripts = TRUE to correctly identify points.
+## Scales are "same" so zooming applies to all panels.
 Depth <- equal.count(quakes$depth, number = 3, overlap = 0.1)
 playwith(xyplot(lat ~ long | Depth, data = quakes,
       subscripts = TRUE, aspect = "iso", pch = ".", cex = 2),
    labels = paste("mag", quakes$mag))
+
+## Spin and zoom for a 3D Lattice plot.
+## Drag on the plot to rotate in 3D (can be confusing).
+## Brushing is linked to the previous xyplot (if still open).
+playwith(cloud(-depth ~ long * lat, quakes, zlab = "altitude"),
+   new = TRUE, link.to = playDevCur(), click.mode = "Brush")
+
+## Set brushed points according to a logical condition
+## (needs recent version of lattice)
+playSetIDs(value = which(quakes$mag >= 6))
 
 ## Interactive control of a parameter with a slider.
 xx <- rnorm(50)
@@ -311,7 +397,7 @@ xx <- rnorm(50)
 kernels <- c("gaussian", "epanechnikov", "rectangular",
    "triangular", "biweight", "cosine", "optcosine")
 playwith(plot(density(xx, bw = bandwidth, kern = kernel), lty = lty),
-	parameters = list(bandwidth = I(c(0.1, 5:100/100)),
+	parameters = list(bandwidth = I(c(0.1, 1:50/50)),
             kernel = kernels, lty = 1:6))
 
 ## More parameters (logical, numeric, text).
@@ -343,12 +429,6 @@ playwith( {
        merge = TRUE, bg = 'gray90')
 }, data.points = pts, labels = labs)
 
-## Simple spin and zoom for a 3D Lattice plot (slow).
-playwith(wireframe(volcano, drape = TRUE))
-
-## Brushing a multivariate scatterplot.
-playwith(splom(environmental))
-
 ## A ggplot example.
 ## NOTE: only qplot()-based calls will work.
 ## Labels are taken from rownames of the data.
@@ -377,18 +457,20 @@ playwith(myGridPlot(1:10, 11:20, pch = 17), viewport = "theData")
 ## Presenting the window as a modal dialog box.
 ## When the window is closed, ask user to confirm.
 ## Use only a subset of the default tools, and hide plot call.
-subTools <- list("identify", "clear", "zoom", "zoomout", "zoomfit")
 confirmClose <- function(playState) {
-	if (gWidgets::gconfirm("Close window and report IDs?")) {
+	if (gconfirm("Close window and report IDs?",
+                     parent = playState$win)) {
 		cat("Indices of identified data points:\n")
 		print(playGetIDs(playState))
 		return(FALSE) ## close
 	} else TRUE ## don't close
 }
-xy <- data.frame(x = 1:20, y = rnorm(20), row.names = letters[1:20])
-playwith(plot(xy), on.close = confirmClose, modal = TRUE,
-	width = 4, height = 3.5, show.call = FALSE,
-	top = NULL, left = subTools)
+xy <- data.frame(x = 1:20, y = rnorm(20),
+                 row.names = letters[1:20])
+playwith(xyplot(y ~ x, xy, main = "Select points, then close"),
+        width = 4, height = 3.5, show.toolbars = FALSE,
+        on.close = confirmClose, modal = TRUE,
+        click.mode = "Brush")
 
 ## Demonstrate cacheing of objects in local environment.
 ## By default, only local variables in the plot call are stored.
@@ -397,14 +479,11 @@ doLocalStuff <- function(...) {
    y_local <- rnorm(100)
    angle <- (atan2(y_local, x_global) / (2*pi)) + 0.5
    color <- hsv(h = angle, v = 0.75)
-   mkpolys <- function(z) {
-      p <- runif(4*length(z), -0.05, 0.05)
-      p[4*seq(z)-3] <- z
-      p[4*seq(z)] <- NA; p
+   doRays <- function(x, y, col) {
+      segments(0, 0, x, y, col = col)
    }
    playwith(plot(x_global, y_local, pch = 8, col = color,
-      panel.first = polygon(mkpolys(x_global), mkpolys(y_local),
-                            col = color, border = NA)),
+      panel.first = doRays(x_global, y_local, color)),
    ...)
 }
 doLocalStuff(title = "locals only") ## eval.args = NA is default
@@ -427,22 +506,22 @@ gc()
 bigobj <- rpois(5000000, 1)
 object.size(bigobj) / 1048576 ## in MB
 gc()
-playwith(qqmath(~ bigobj, f.value=ppoints(500)),
-   data.points=NA, labels=NA, time.mode=FALSE)
+playwith(qqmath(~ bigobj, f.value = ppoints(500)),
+   data.points = NA, labels = NA)
 playDevOff()
 gc()
 ## or generate the trellis object first:
-trel <- qqmath(~ bigobj, f.value=ppoints(500))
-playwith(update(trel))
+trel <- qqmath(~ bigobj, f.value = ppoints(500))
+playwith(trel)
 rm(trel)
 ## in this case, better to compute the sample first:
-subobj <- quantile(foo, ppoints(500), na.rm=TRUE)
+subobj <- quantile(foo, ppoints(500), na.rm = TRUE)
 playwith(qqmath(~ subobj))
 rm(subobj)
 rm(bigobj)
 }
 
-## See help(playwith.API) for examples of new tools.
+## See demo(package = "playwith") for examples of new tools.
 }
 }
 \keyword{ iplot }

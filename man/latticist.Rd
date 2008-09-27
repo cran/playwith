@@ -1,20 +1,23 @@
 \name{latticist}
 \alias{latticist}
 \alias{try.prepanel.loess}
+\alias{marginal.plot}
 \title{ A Lattice GUI }
 \description{
-  Interactively visualise a data set using \code{\link[lattice]{Lattice}} displays.
+  Interactively explore a data set using \link[lattice]{Lattice} displays.
 }
 \usage{
 latticist(dat,
           reorder.levels = TRUE,
-          plot.call = quote(marginals(dat, reorder=FALSE)),
+          plot.call = quote(marginal.plot(dat, reorder = FALSE)),
           ...,
           labels = rownames(dat),
           time.mode = FALSE)
 }
 \arguments{
-  \item{dat}{ a data frame containing numeric and/or categorical variables. }
+  \item{dat}{ a data frame (with numeric and/or categorical variables),
+    or an object that can be coerced with \code{\link{as.data.frame}}
+    (such as a \code{table}). }
   \item{reorder.levels}{ if \code{TRUE}, change the ordering of levels of factor
   variables so they are in order of frequency. Note that this does not
   change the data, only its internal representation: see
@@ -26,29 +29,30 @@ latticist(dat,
   \code{ordered}!
   Numeric variables with discrete values in {0, 1, -1} are converted to factors.
   }
-  \item{plot.call}{ call defining the initial plot display. }
+  \item{plot.call}{ call defining the initial plot display.
+  This can be given instead of \code{dat}, and the dataset will be
+  derived from it (see examples). }
   \item{\dots, labels, time.mode}{
     further arguments passed to \code{\link{playwith}}.
   }
 }
 \details{
-  Just try it...
+  Latticist is an extension to \code{\link{playwith}}, adding a
+  toolbar to construct lattice displays for a given dataset.
+  As such, many of the features, such as style settings and linked
+  brushing, are (or should be) described in the help for
+  \code{\link{playwith}}.
 
-  It is recommended to install \pkg{hexbin}, which is a BioConductor
-  package, as follows:
+  It is recommended to install the \pkg{deldir} package, as well as
+  \pkg{hexbin}, a BioConductor package, which can be installed as follows:
 
   \code{source("http://bioconductor.org/biocLite.R")}
 
   \code{biocLite("hexbin")}
-
-  To change the style of lattice graphics, use \code{lattice.options(default.theme=...)}.
-See \code{\link[lattice]{show.settings}},
-\code{\link[lattice]{simpleTheme}}
-and \code{\link[latticeExtra]{custom.theme}}.
 }
 \value{
   invisibly returns the \code{playState} object representing the plot
-  window: see \code{\link{playDevCur}}.
+  window: see \link{playwith.API}.
 }
 \author{ Felix Andrews \email{felix@nfrac.org} }
 \references{
@@ -57,7 +61,10 @@ and \code{\link[latticeExtra]{custom.theme}}.
 Sarkar, Deepayan (2008) "Lattice: Multivariate Data Visualization with
 R", Springer. \url{http://lmdvr.r-forge.r-project.org/}
 }
-\seealso{ \code{\link{playwith}}, \code{\link[lattice]{Lattice}} }
+\seealso{
+  \code{\link{playwith}},
+  \link[lattice]{Lattice},
+  \code{lattice.demo} in the \pkg{TeachingDemos} package. }
 \examples{
 if (interactive()) {
 options(device.ask.default = FALSE)
@@ -68,6 +75,12 @@ options(device.ask.default = FALSE)
 ##      uptake ~ conc | Plant
 ##      uptake ~ conc | Type, groups = Treatment
 latticist(CO2)
+
+## environmental dataset: see ?environmental
+## Daily measurements related to ozone pollution in NYC 1973.
+## Specify initial display:
+readline("Hit Enter for 'environmental' example...")
+latticist(plot = quote(parallel(environmental, col = 1)))
 
 ## National Health and Nutrition Examination Survey.
 ## Try: ~ Smoke, groups = Sex

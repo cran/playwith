@@ -1,65 +1,94 @@
 
+importFrom(lattice, levelplot)
 import(RGtk2)
+import(gWidgets)
 import(gridBase)
-importFrom(graphics, par, plot)
+#import(grid) ## gridBase needs grid attached
 import(grDevices)
-importFrom(utils, head, modifyList)
+importFrom(graphics, par, plot)
+import(utils)
+
+## temporary
+export(marginal.plot)
 
 # the main function
-export(
-	playwith,
-	autoplay
-)
+export(playwith,
+       autoplay,
+       plotOnePage)
+S3method(print, playState)
 
 # latticist
-export(
-       latticist,
+export(latticist,
        reorderByFreq,
        cutEq,
        try.prepanel.loess)
+S3method(levelplot, table)
+
+## latticeStyleGUI
+export(latticeStyleGUI,
+       latticeStyleToBasePar,
+       panel.usertext,
+       panel.brushpoints,
+       latticeStyleDemo,
+       custom.theme.2,
+       custom.theme.black)
 
 # settings
-export(
-       playwith.options,
-       playwith.getOption
-)
+export(playwith.options,
+       playwith.getOption)
 
 # API
-export(
-       playNewPlot,
+export(playNewPlot,
        playReplot,
-       quickTool,
        parameterControlTool,
        playDevCur,
        playDevSet,
        playDevList,
        playDevOff,
        playGetIDs,
+       playSetIDs,
+       playUnlink,
        callArg,
        "callArg<-",
        mainCall,
        "mainCall<-",
        updateMainCall,
+       playSourceCode,
        playDo,
-       playPointInput,
-       playLineInput,
-       playRectInput,
-       playSelectData,
-       whichSpace,
-       deviceCoordsToSpace,
+       playAnnotate,
+       playClear,
        playFreezeGUI,
        playThawGUI,
-       blockRedraws,
        playPrompt,
        rawXLim,
        rawYLim,
        "rawXLim<-",
-       "rawYLim<-",
+       "rawYLim<-")
+
+## xyData
+export(getDataArg,
        xyCoords,
        xyData,
+       plotCoords,
        spaceCoordsToDataCoords,
-       dataCoordsToSpaceCoords
-       )
+       dataCoordsToSpaceCoords)
+S3method(plotCoords, default)
+S3method(plotCoords, qqnorm)
+S3method(plotCoords, qqplot)
+S3method(plotCoords, qqmath)
+S3method(plotCoords, cloud)
+S3method(labels, ts)
+S3method(labels, zoo)
 
-S3method(print, playState)
+## clickOrDrag
+export(playSelectData,
+       playPointInput,
+       playLineInput,
+       playRectInput)
 
+## gridwork
+export(convertFromDevicePixels,
+       convertToDevicePixels,
+       inViewport,
+       grobBBDevicePixels,
+       showGrobsBB)

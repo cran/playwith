@@ -3,13 +3,16 @@
 ## Copyright (c) 2007 Felix Andrews <felix@nfrac.org>
 ## GPL version 2 or newer
 
-### TIME.MODE
 
-toolConstructors$time.mode <- function(playState)
+initOptionsActions <- function(playState)
 {
-    if (playState$accepts.arguments == FALSE) return(NA)
+    hasArgs <- playState$accepts.arguments
     ## sensible default for time.mode based on data
-    if (playState$.args$missing_time.mode) {
+    ## DISABLED -- do not want to evaluate data by default
+    ## and anyway, it is easier now to zoom along x axis
+    #if (hasArgs && playState$.args$missing_time.mode) {
+    if (hasArgs && is.na(playState$time.mode)) {
+        ## detect default for time.mode based on data
         dat <- xyData(playState, space="packet 1")
         playState$time.mode <-
             (inherits(dat$x, "ts") ||
@@ -18,26 +21,48 @@ toolConstructors$time.mode <- function(playState)
         ## once only ## TODO: better to wait for manual switch
         playState$.args$missing_time.mode <- FALSE
     }
-
     with (playState$widgets, {
         timeScrollbar["sensitive"] <- playState$time.mode
         timeEntry["sensitive"] <- playState$time.mode
     })
-    if (is.null(playState$time.vector)) {
-        if (playState$accepts.arguments == FALSE) return(NA)
+    if (playState$time.mode)
+        time.mode_init(playState)
+}
+
+updateOptionsActions <- function(playState)
+{
+    aGroup <- playState$actionGroups[["PlotActions"]]
+    hasArgs <- playState$accepts.arguments
+    ## Time Mode
+    hasTimeVec <- !is.null(playState$time.vector)
+    aGroup$getAction("TimeMode")$setSensitive(hasArgs || hasTimeVec)
+    needInit <- (aGroup$getAction("TimeMode")$getActive() !=
+                 playState$time.mode)
+    aGroup$getAction("TimeMode")$setActive(isTRUE(playState$time.mode))
+    if (needInit) {
+        time.mode_init(playState)
+    } else {
+        time.mode_update(playState)
     }
-    quickTool(playState,
-              label = "Time mode",
-              icon = "gtk-media-forward-ltr",
-              tooltip = "Time mode: scroll along the x-axis",
-              f = time.mode_handler,
-              post.plot.action = time.mode_postplot_action,
-              isToggle = TRUE)
+    ## global options
+    aGroup <- playState$actionGroups[["GlobalActions"]]
+    ## Annotations options
+    aGroup$getAction("ClipAnnot")$setActive(isTRUE(playState$clip.annotations))
+    aGroup$getAction("PageAnnot")$setActive(isTRUE(playState$page.annotation))
+    ## Statusbar, toolbars, tooltips
+    aGroup$getAction("ShowStatusbar")$setActive(isTRUE(playState$show.statusbar))
+    aGroup$getAction("ShowToolbars")$setActive(isTRUE(playState$show.toolbars))
+    aGroup$getAction("ShowTooltips")$setActive(isTRUE(playState$show.tooltips))
 }
 
 time.mode_handler <- function(widget, playState)
 {
     playState$time.mode <- widget["active"]
+    time.mode_init(playState)
+}
+
+time.mode_init <- function(playState)
+{
     blockRedraws(with (playState$widgets, {
         timeScrollBox["visible"] <- TRUE
         timeScrollbar["sensitive"] <- playState$time.mode
@@ -52,16 +77,16 @@ time.mode_handler <- function(widget, playState)
         }
     }
     ## update scrollbar etc
-    time.mode_postplot_action(widget, playState)
+    time.mode_update(playState)
 }
 
-time.mode_postplot_action <- function(widget, playState)
+time.mode_update <- function(playState)
 {
-    if (playState$time.mode == FALSE) return()
-    if (widget["active"] == FALSE) {
-        widget["active"] <- TRUE ## triggers update
-        return()
-    }
+    if (!isTRUE(playState$time.mode)) return()
+    #if (widget["active"] == FALSE) {
+    #    widget["active"] <- TRUE ## triggers update
+    #    return()
+    #}
     blockRedraws({
         widg <- playState$widgets
         if (!is.null(playState$time.vector)) {
@@ -109,7 +134,7 @@ time.mode_postplot_action <- function(widget, playState)
 
 time.mode_scrollbar_handler <- function(widget, playState)
 {
-    if (!playState$plot.ready) return()
+    if (!playState$tmp$plot.ready) return()
     newLim <- widget$getValue()
     if (!is.null(playState$time.vector)) {
         newLim <- round(newLim)
@@ -129,7 +154,7 @@ time.mode_scrollbar_handler <- function(widget, playState)
 
 time.mode_entry_handler <- function(widget, playState)
 {
-    if (!playState$plot.ready) return()
+    if (!playState$tmp$plot.ready) return()
     if (!is.null(playState$time.vector)) {
         newLim <- widget["text"]
         time.vector <- playState$time.vector
@@ -171,4 +196,29 @@ time.mode_entry_handler <- function(widget, playState)
     else if ("integer" %in% cls) newLim <- as.integer(newLim)
     rawXLim(playState) <- as.numeric(newLim)
     playReplot(playState)
+}
+
+clip.annotations_handler <- function(widget, playState)
+{
+    playState$clip.annotations <- widget["active"]
+}
+
+page.annotation_handler <- function(widget, playState)
+{
+    playState$page.annotation <- widget["active"]
+}
+
+show.statusbar_handler <- function(widget, playState) {
+    playState$widgets$statusbarBox["visible"] <- widget["active"]
+}
+
+show.toolbars_handler <- function(widget, playState) {
+    playState$widgets$leftToolbar["visible"] <- widget["active"]
+}
+
+show.tooltips_handler <- function(widget, playState)
+{
+    playState$show.tooltips <- widget["active"]
+    ## start it (or stop it)
+    gtkmain_handler(playState=playState)
 }

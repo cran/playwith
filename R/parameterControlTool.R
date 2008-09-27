@@ -3,58 +3,6 @@
 ## Copyright (c) 2007 Felix Andrews <felix@nfrac.org>
 ## GPL version 2 or newer
 
-### Tools
-
-## the big list of built-in tools
-## (added to by code in files playTools_*.R)
-toolConstructors <-
-    list(`--` = function(...) gtkSeparatorToolItem(),
-         `~~` = function(...) {
-             foo <- gtkSeparatorToolItem()
-             foo$setDraw(FALSE)
-             foo
-         },
-         `---` = function(...) {
-             foo <- gtkSeparatorToolItem()
-             foo$setExpand(TRUE)
-             foo$setDraw(FALSE)
-             foo
-         }
-         )
-
-### Convenient constructor function
-
-quickTool <-
-    function(playState,
-             label = "",
-             icon.name = NULL,
-             tooltip = NULL,
-             f = NULL,
-             data = NULL,
-             post.plot.action = NULL,
-             isToggle = FALSE,
-             show = TRUE)
-{
-    x <- if (isToggle) gtkToggleToolButton(show=show)
-    else gtkToolButton(show=show)
-    x["label"] <- label
-    x["icon-name"] <- icon.name
-    if (!is.null(tooltip)) {
-        result <- try(x["tooltip-text"] <- tooltip, silent=TRUE)
-        #result <- try(x$setTooltipText(tooltip), silent=TRUE)
-        #if (inherits(result, "try-error"))
-        #    x$setTooltip(gtkTooltips(), tooltip) ## deprecated
-    }
-    if (!is.null(f)) {
-        if (is.null(data)) data <- playState
-        else data$playState <- playState
-        gSignalConnect(x, "clicked", f, data=data)
-    }
-    if (!is.null(post.plot.action))
-        attr(x, "post.plot.action") <- post.plot.action
-    x
-}
-
 parameterControlTool <-
     function(playState, name, value,
              label = name,
@@ -70,7 +18,7 @@ parameterControlTool <-
         oldval <- get(name, envir=playState$env)
         if (identical(oldval, newval)) return()
         assign(name, newval, envir=playState$env)
-        if (!playState$plot.ready) return()
+        if (!isTRUE(playState$tmp$plot.ready)) return()
         playReplot(playState)
     }
     updateParamText <- function(widget, playState) {
@@ -78,7 +26,7 @@ parameterControlTool <-
         oldval <- get(name, envir=playState$env)
         if (identical(oldval, newval)) return()
         assign(name, newval, envir=playState$env)
-        if (!playState$plot.ready) return()
+        if (!isTRUE(playState$tmp$plot.ready)) return()
         playReplot(playState)
     }
     updateParamTextNumeric <- function(widget, playState) {
@@ -88,7 +36,7 @@ parameterControlTool <-
         oldval <- get(name, envir=playState$env)
         if (identical(oldval, newval)) return()
         assign(name, newval, envir=playState$env)
-        if (!playState$plot.ready) return()
+        if (!isTRUE(playState$tmp$plot.ready)) return()
         playReplot(playState)
     }
     updateParamCombobox <- function(widget, playState) {
@@ -98,7 +46,7 @@ parameterControlTool <-
         oldval <- get(name, envir=playState$env)
         if (identical(oldval, newval)) return()
         assign(name, newval, envir=playState$env)
-        if (!playState$plot.ready) return()
+        if (!isTRUE(playState$tmp$plot.ready)) return()
         playReplot(playState)
     }
     updateParamActive <- function(widget, playState) {
@@ -106,9 +54,12 @@ parameterControlTool <-
         oldval <- get(name, envir=playState$env)
         if (identical(oldval, newval)) return()
         assign(name, newval, envir=playState$env)
-        if (!playState$plot.ready) return()
+        if (!isTRUE(playState$tmp$plot.ready)) return()
         playReplot(playState)
     }
+    ## construct widget based on the type of value.
+    ## note that the initial value has been set in playwith()
+    ## integer or AsIs : spinbutton
     if (is.integer(value) || inherits(value, "AsIs")) {
         if (inherits(value, "AsIs")) value <- as.vector(value)
         box <- gtkVBox()
@@ -131,6 +82,7 @@ parameterControlTool <-
         foo$add(box)
         return(foo)
     }
+    ## numeric: entry or slider
     if (is.numeric(value)) {
         if (length(value) == 1) {
             ## entry coercing to numeric
@@ -177,6 +129,7 @@ parameterControlTool <-
         foo$add(box)
         return(foo)
     }
+    ## character: entry or combobox
     if (is.character(value)) {
         box <- gtkVBox()
         box$packStart(gtkLabel(label))
@@ -208,6 +161,7 @@ parameterControlTool <-
         foo$add(box)
         return(foo)
     }
+    ## logical: checkbutton
     if (is.logical(value)) {
         ## toggle button / checkbox
         widget <- gtkCheckButton(label)

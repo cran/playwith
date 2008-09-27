@@ -2,7 +2,7 @@
 \alias{parameterControlTool}
 \title{ Create playwith tools for controlling parameter values }
 \description{
-  Part of the \code{\link{playwith}} Application Programming Interface.
+  Part of the \pkg{playwith} Application Programming Interface.
 }
 \usage{
 ## Note: this is only to be called inside a tool constructor function.
@@ -27,9 +27,9 @@ parameterControlTool(playState, name, value,
   a \code{\link[RGtk2]{gtkToolButton}}.
 }
 \author{ Felix Andrews \email{felix@nfrac.org} }
-\seealso{ \code{\link{quickTool}}, \code{\link{playwith}} }
+\seealso{ \code{\link{playwith}} }
 \examples{
-
+## none yet
 }
 \keyword{ iplot }
 \keyword{ programming }

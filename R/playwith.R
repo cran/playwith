@@ -27,21 +27,18 @@ playwith <-
              labels = NULL,
              data.points = NULL,
              viewport = NULL,
-             top.tools = playwith.getOption("top.tools"),
-             left.tools = playwith.getOption("left.tools"),
-             bottom.tools = playwith.getOption("bottom.tools"),
-             right.tools = playwith.getOption("right.tools"),
              parameters = list(),
+             tools = list(),
+             update.actions = list(),
+             init.actions = list(),
              ...,
              width = playwith.getOption("width"),
              height = playwith.getOption("height"),
              pointsize = playwith.getOption("pointsize"),
-             modal = FALSE,
-             on.close = NULL,
-             show.call = TRUE,
              eval.args = playwith.getOption("eval.args"),
-             invert.match = FALSE,
-             envir = parent.frame(),
+             on.close = playwith.getOption("on.close"),
+             modal = FALSE,
+             link.to = NULL,
              playState = if (!new) playDevCur(),
              plot.call,
              main.function)
@@ -63,19 +60,16 @@ playwith <-
     if (missing(main.function)) main.function <- NULL
     if (is.character(main.function))
         main.function <- get(main.function)
-    ## set defaults for named arguments from playwith.options()
-#    missingname <- function(x)
-#        eval.parent(substitute(missing(nm), list(nm=as.symbol(x))))
-#    for (nm in c("new", "top.tools", "left.tools", "bottom.tools",
-#                 "right.tools", "width", "height", "pointsize",
-#                 "show.call", "eval.args"))
-#        if (missingname(nm)) assign(nm, playwith.getOption(nm))
-#    if (missing(playState))
-#        playState <- if (new) NULL else playDevCur()
     ## check types
-    if (!is.call(plot.call)) stop("'expr' / 'plot.call' should be a call")
-    if (!is.null(title) && !is.character(title)) stop("'title' should be character")
-    if (!is.null(viewport) && !is.list(viewport)) viewport <- list(plot=viewport)
+    if (!is.call(plot.call))
+        stop("'expr' / 'plot.call' should be a call")
+    if (!is.null(title) && !is.character(title)) stop("invalid 'title'")
+    if (!is.null(viewport) && !is.list(viewport))
+        viewport <- list(plot=viewport)
+    if (!is.null(playState) && !inherits(playState, "playState"))
+        stop("invalid 'playState'")
+    if (!is.null(link.to) && !inherits(link.to, "playState"))
+        stop("invalid 'link.to'")
     ## playState is the <environment> encapsulating the plot, window and device
     cleanupStateEnv()
     if (!is.null(playState)) {
@@ -86,13 +80,21 @@ playwith <-
         playState <- new.env(parent = emptyenv())
         class(playState) <- c("playState", "environment")
         ID <- basename(tempfile())
+        playState$ID <- ID
         StateEnv[[ID]] <- playState
     }
-    playState$plot.ready <- FALSE
+    playState$tmp$plot.ready <- FALSE
     StateEnv$.current <- playState
     ## env is the <environment> containing local cached objects
     env <- new.env(parent = globalenv())
     ## work out evaluation rules
+    envir <- parent.frame() ## where to look for variables
+    invert.match <- FALSE
+    if (is.list(eval.args)) {
+        if (!is.null(eval.args$envir)) envir <- eval.args$envir
+        if (!is.null(eval.args$invert)) invert.match <- eval.args$invert
+        eval.args <- eval.args[[1]]
+    }
     evalGlobals <- !is.na(eval.args)
     if (is.na(eval.args))
         eval.args <- (environmentName(envir) != "R_GlobalEnv")
@@ -107,9 +109,8 @@ playwith <-
         daSize <- playState$widgets$drawingArea$getAllocation()
         if (missing(width)) width <- daSize$width / 96
         if (missing(height)) height <- daSize$height / 96
-        #myWin$destroy()
         ## remove everything
-        playState$devoff <- TRUE ## to avoid trigger close
+        playState$tmp$devoff <- TRUE ## to avoid trigger close
         myWin$getChild()$destroy()
         myWin$present()
         myWin$resize(width * 96, height * 96)
@@ -119,13 +120,12 @@ playwith <-
         if (!inherits(myWin, "GtkWindow"))
             stop(paste("Could not create the GTK window.",
                        "Make sure you have recent versions of",
-                       "RGtk2 and the GTK+ libraries.",
-                       "See http://www.ggobi.org/rgtk2/"))
+                       "RGtk2 and the GTK+ libraries."))
         ## set approx window size; NOTE: device size is adjusted below
         myWin["default-width"] <- width * 96
         myWin["default-height"] <- height * 96
         myWin["modal"] <- modal
-        myWin$show()
+        #myWin$show()
         ## switch to GTK event loop while the window is in focus (for tooltips)
         myWin$addEvents(GdkEventMask["focus-change-mask"])
         gSignalConnect(myWin, "focus-in-event", gtkmain_handler,
@@ -135,55 +135,49 @@ playwith <-
         gSignalConnect(myWin, "delete-event", gtkmainquit_handler,
                        data=playState)
         ## run user-defined close action
-        gSignalConnect(myWin, "delete-event",  window.close_handler,
+        gSignalConnect(myWin, "delete-event", window.close_handler,
                        data=playState)
     }
     if (!is.null(title)) myWin["title"] <- title
-    widg <- list()
     myVBox <- gtkVBox()
     myWin$add(myVBox)
-    ## call toolbar: shares space with the prompt (used for interaction)
-    toolbarPromptHBox <- gtkHBox()
-    myVBox$packStart(toolbarPromptHBox, expand=FALSE)
-    ## create the call toolbar (similar to web browser address bar)
-    callToolbar <- gtkToolbar()
+    playState$win <- myWin
+    ## pass custom tools to UI manager
+    optTools <- eval(playwith.getOption("custom.tools"))
+    if (is.character(optTools)) optTools <- get(optTools)
+    if (is.function(optTools)) optTools <- optTools(playState)
+    cTools <- c(tools, optTools)
+    ## extract any update / init actions attached to tools
+    for (i in seq_along(cTools)) {
+        xUpd <- cTools[[i]]$update.action
+        xIni <- cTools[[i]]$init.action
+        if (!is.null(xUpd)) {
+            update.actions <- c(update.actions, xUpd)
+            cTools[[i]]$update.action <- NULL
+        }
+        if (!is.null(xIni)) {
+            init.actions <- c(init.actions, xIni)
+            cTools[[i]]$init.action <- NULL
+        }
+    }
+    ## UI manager
+    uiManager <- constructUIManager(playState, cTools)
+    actionGroups <- uiManager$getActionGroups()
+    names(actionGroups) <- sapply(actionGroups, gtkActionGroupGetName)
+    ## construct menus
+    menubar <- uiManager$getWidget("/MenuBar")
+    menubar$show() ## location, layout behavior, padding
+    menubar["visible"] <-
+        isTRUE(playwith.getOption("show.menubar"))
+    myVBox$packStart(menubar, expand=FALSE)
+    ## construct the call toolbar
+    callToolbar <- uiManager$getWidget("/CallToolbar")
+    callToolbar["visible"] <-
+        isTRUE(playwith.getOption("show.calltoolbar"))
+    callToolbar$setTooltips(TRUE) #playwith.getOption("show.tooltips"))
     callToolbar["toolbar-style"] <- GtkToolbarStyle["icons"]
     callToolbar["show-arrow"] <- FALSE
-    undoButton <- quickTool(playState, "Back",
-                            icon = "gtk-undo-ltr",
-                            tooltip = "Go back to previous plot call",
-                            f = function(widget, playState) {
-                                with(playState$widgets, {
-                                    redoButton["sensitive"] <- TRUE
-                                    callEntry["active"] <- callEntry["active"] + 1
-                                    #callEntry$getChild()$activate()
-                                })
-                            })
-    redoButton <- quickTool(playState, "Forward",
-                            icon = "gtk-redo-ltr",
-                            tooltip = "Go forward to next plot call",
-                            f = function(widget, playState) {
-                                with(playState$widgets, {
-                                    callEntry["active"] <- callEntry["active"] - 1
-                                    #callEntry$getChild()$activate()
-                                })
-                            })
-    redrawButton <- quickTool(playState, "Redraw",
-                              icon = "gtk-refresh",
-                              tooltip = "Redraw the current plot (hold Shift for full reload)",
-                              f = function(widget, playState) {
-                                  px <- playState$win$window$getPointer()
-                                  if ((as.flag(px$mask) & GdkModifierType["shift-mask"]))
-                                      playNewPlot(playState)
-                                  else playReplot(playState)
-                              })
-    undoButton["sensitive"] <- FALSE
-    redoButton["sensitive"] <- FALSE
-    helpButton <- toolConstructors$help(playState)
-    callToolbar$insert(undoButton, -1)
-    callToolbar$insert(redoButton, -1)
-    callToolbar$insert(redrawButton, -1)
-    callToolbar$insert(helpButton, -1)
+    ## merge in the address bar
     callEntry <- gtkComboBoxEntryNewText()
     callEntry$show()
     ## "changed" emitted on typing and selection
@@ -204,38 +198,45 @@ playwith <-
     item <- gtkToolItem()
     item$add(callEditButton)
     callToolbar$insert(item, -1)
-    toolbarPromptHBox$packStart(callToolbar)
-    ## create the prompt
-    promptBox <- gtkEventBox(show=FALSE)
-    promptBox["sensitive"] <- FALSE
-    promptLabel <- gtkLabel()
-    promptBox$add(promptLabel)
-    promptBox$modifyBg(GtkStateType["normal"], "yellow")
-    promptLabel$modifyFg(GtkStateType["normal"], "black")
-    toolbarPromptHBox$packStart(promptBox)
-    ## try to force resize
-    gdkWindowProcessAllUpdates()
-    while (gtkEventsPending()) gtkMainIterationDo(blocking=FALSE)
-    promptBox["height-request"] <-
-        callToolbar$getAllocation()$height
-    if (show.call == FALSE) {
-        promptBox$show()
-        callToolbar$hide()
-    }
+    callToolbar$show()
+    tbStyle <- GtkToolbarStyle[playwith.getOption("toolbar.style")]
     ## create the top toolbar
-    topToolbar <- gtkToolbar(show=FALSE)
-    topToolbar["toolbar-style"] <-
-        GtkToolbarStyle[playwith.getOption("toolbar.style")]
+    topToolbar <- uiManager$getWidget("/TopToolbar")
+    topToolbar$setTooltips(TRUE)
+    topToolbar["toolbar-style"] <- tbStyle
+    ## create the bottom toolbar
+    bottomToolbar <- uiManager$getWidget("/BottomToolbar")
+    bottomToolbar$setTooltips(TRUE)
+    bottomToolbar["toolbar-style"] <- tbStyle
+    ## create the left toolbar
+    leftToolbar <- uiManager$getWidget("/LeftToolbar")
+    leftToolbar$setTooltips(TRUE)
+    leftToolbar["toolbar-style"] <- tbStyle
+    leftToolbar["orientation"] <- GtkOrientation["vertical"]
+    ## create the right toolbar
+    rightToolbar <- uiManager$getWidget("/RightToolbar")
+    rightToolbar$setTooltips(TRUE)
+    rightToolbar["toolbar-style"] <- tbStyle
+    rightToolbar["orientation"] <- GtkOrientation["vertical"]
+    ## create the statusbar and coords readout
+    statusbarBox <- gtkHBox()
+    coordsLabel <- gtkLabel()
+    coordsLabel["single-line-mode"] <- TRUE
+    coordsLabel["selectable"] <- TRUE
+    statusbarBox$packStart(coordsLabel, expand=FALSE)
+    statusbar <- gtkStatusbar()
+    statusbarBox$packStart(statusbar)
+    statusbarBox["visible"] <-
+        isTRUE(playwith.getOption("show.statusbar"))
+    ## place toolbars in the window layout
+    myVBox$packStart(callToolbar, expand=FALSE)
     myVBox$packStart(topToolbar, expand=FALSE)
-    ## create the plot area and side toolbars
     myHBox <- gtkHBox()
     myVBox$packStart(myHBox)
-    ## create the left toolbar
-    leftToolbar <- gtkToolbar(show=FALSE)
-    leftToolbar["orientation"] <- GtkOrientation["vertical"]
-    leftToolbar["toolbar-style"] <-
-        GtkToolbarStyle[playwith.getOption("toolbar.style")]
     myHBox$packStart(leftToolbar, expand=FALSE)
+    myHBox$packEnd(rightToolbar, expand=FALSE)
+    myVBox$packEnd(statusbarBox, expand=FALSE)
+    myVBox$packEnd(bottomToolbar, expand=FALSE)
     ## create the plot area
     myDA <- gtkDrawingArea()
     myDA$addEvents(GdkEventMask["enter-notify-mask"]
@@ -243,9 +244,9 @@ playwith <-
                    + GdkEventMask["button-release-mask"]
                    + GdkEventMask["exposure-mask"])
     myHBox$packStart(myDA)
-    ## note, constraint is removed below
+    ## note, this constraint is removed below
     myDA$setSizeRequest(width * 96, height * 96)
-    asCairoDevice(myDA, pointsize=pointsize)
+    asCairoDevice(myDA, pointsize = pointsize)
     ## need to regenerate coord spaces after resize
     gSignalConnect(myDA, "configure-event", configure_handler,
                    data=playState)
@@ -253,8 +254,6 @@ playwith <-
                    data=playState)
     gSignalConnect(myHBox, "remove", devoff_handler,
                    data=playState, after=TRUE)
-    ## initialise trellis settings for the device
-    trellis.device(new=FALSE)
     ## create the page scrollbar
     pageScrollBox <- gtkVBox(show=FALSE)
     myHBox$packStart(pageScrollBox, expand=FALSE)
@@ -263,7 +262,7 @@ playwith <-
     pageEntry["width-chars"] <- 2
     gSignalConnect(pageEntry, "activate",
                    function(widget, playState) {
-                       if (!playState$plot.ready) return()
+                       if (!playState$tmp$plot.ready) return()
                        newPage <- round(as.numeric(widget["text"]))
                        if (newPage == playState$page) return()
                        playState$page <- newPage
@@ -272,12 +271,13 @@ playwith <-
                    data=playState)
     pageScrollBox$packStart(pageEntry, expand=FALSE)
     pageScrollbar <- gtkVScrollbar()
-    pageScrollbar["adjustment"] <- gtkAdjustment(value=1, lower=1, upper=1+1,
-                                                 step.incr=1, page.incr=1, page.size=1)
+    pageScrollbar["adjustment"] <-
+        gtkAdjustment(value=1, lower=1, upper=1+1,
+                      step.incr=1, page.incr=1, page.size=1)
     pageScrollbar["update-policy"] <- GtkUpdateType["delayed"]
     gSignalConnect(pageScrollbar, "value-changed",
                    function(widget, playState) {
-                       if (!playState$plot.ready) return()
+                       if (!playState$tmp$plot.ready) return()
                        newPage <- round(widget$getValue())
                        if (newPage == playState$page) return()
                        playState$page <- newPage
@@ -285,12 +285,6 @@ playwith <-
                    },
                    data=playState)
     pageScrollBox$packStart(pageScrollbar)
-    ## create the right toolbar
-    rightToolbar <- gtkToolbar(show=FALSE)
-    rightToolbar["orientation"] <- GtkOrientation["vertical"]
-    rightToolbar["toolbar-style"] <-
-        GtkToolbarStyle[playwith.getOption("toolbar.style")]
-    myHBox$packStart(rightToolbar, expand=FALSE)
     ## create the time/index scrollbar
     timeScrollBox <- gtkHBox(show=FALSE)
     myVBox$packStart(timeScrollBox, expand=FALSE)
@@ -306,53 +300,36 @@ playwith <-
     gSignalConnect(timeScrollbar, "value-changed",
                    time.mode_scrollbar_handler, data=playState)
     timeScrollBox$packStart(timeScrollbar)
-    ## create the bottom toolbar
-    bottomToolbar <- gtkToolbar(show=FALSE)
-    bottomToolbar["toolbar-style"] <-
-        GtkToolbarStyle[playwith.getOption("toolbar.style")]
-    myVBox$packStart(bottomToolbar, expand=FALSE)
-    ## add dummy toolbar buttons to force plot device to approx size
-    initTbar <- function(tbar, horiz) {
-        tbar$show()
-        tbar$insert(quickTool(playState, label="Loading...",
-                              icon="gtk-execute"), -1)
-        ## try to force resize
-        gdkWindowProcessAllUpdates()
-        while (gtkEventsPending()) gtkMainIterationDo(blocking=FALSE)
-        if (horiz) tbar$setSizeRequest(-1, tbar$getAllocation()$height)
-        else tbar$setSizeRequest(tbar$getAllocation()$width, -1)
-    }
-    if (length(top.tools)) initTbar(topToolbar, horiz=TRUE)
-    if (length(bottom.tools)) initTbar(bottomToolbar, horiz=TRUE)
-    if (length(left.tools)) initTbar(leftToolbar, horiz=FALSE)
-    if (length(right.tools)) initTbar(rightToolbar, horiz=FALSE)
     myHBox["resize-mode"] <- GtkResizeMode["queue"] ## does nothing?
-    ## after resize, remove minimum size from device
+    ## after resize, remove minimum size constraint from device
     myDA$setSizeRequest(-1, -1)
+    myWin$show()
     ## store the state of this plot window in a new environment
-    ## set defaults -- these can be replaced by explicit arguments
+    ## set per-window options -- can be replaced by explicit arguments
     playState$page <- 1
     playState$pages <- 1
     playState$is.lattice <- FALSE
     playState$is.ggplot <- FALSE
+    playState$click.mode <- playwith.getOption("click.mode")
+    playState$time.mode <- playwith.getOption("time.mode")
     playState$show.tooltips <- playwith.getOption("show.tooltips")
-    playState$annotation.mode <- playwith.getOption("annotation.mode")
+    playState$show.toolbars <- playwith.getOption("show.toolbars")
+    playState$show.statusbar <- playwith.getOption("show.statusbar")
+    playState$page.annotation <- playwith.getOption("page.annotation")
     playState$clip.annotations <- playwith.getOption("clip.annotations")
-    playState$label.style <- playwith.getOption("label.style")
     playState$label.offset <- playwith.getOption("label.offset")
-    playState$arrow.style <- playwith.getOption("arrow.style")
-    playState$arrow.arrow <- playwith.getOption("arrow.arrow")
+    playState$arrow <- playwith.getOption("arrow")
     ## store extra arguments (...) in the state object (playState)
     dots <- list(...)
     for (arg in names(dots)) {
         if (arg == "") next
         playState[[arg]] <- dots[[arg]]
     }
-    time.mode <- dots$time.mode
-    missing_time.mode <- is.null(time.mode)
-    if (is.null(time.mode)) time.mode <- FALSE
+    ## initialise time.vector stuff
     if (!is.null(playState$time.vector)) {
-        if (missing_time.mode) time.mode <- TRUE
+        ## time.mode defaults to TRUE in this case
+        if (is.null(dots$time.mode))
+            playState$time.mode <- TRUE
         ## set current state variables
         env$cur.index <-
             if (!is.null(playState$cur.index)) {
@@ -364,27 +341,41 @@ playwith <-
         env$cur.time <- playState$time.vector[env$cur.index]
         env$time.vector <- playState$time.vector
     }
-    ## set initial values of any parameters
-    for (i in seq_along(parameters)) {
-        parname <- names(parameters)[i]
-        parval <- parameters[[i]]
-        assign(parname, parval[1], envir=env)
-    }
     ## construct the state object (playState)
     playState$win <- myWin
     playState$dev <- dev.cur()
     playState$call <- plot.call
     playState$env <- env
-    playState$time.mode <- time.mode
+    playState$tmp <- list()
     playState$labels <- labels
     playState$data.points <- data.points
     playState$viewport <- viewport
     playState$parameters <- parameters
-    playState$show.call <- show.call
+    playState$tools <- tools
+    playState$update.actions <- update.actions
+    playState$init.actions <- init.actions
+    playState$on.close <- on.close
+    playState$main.function <- main.function
+    playState$pointsize <- pointsize
+    playState$.args <-
+        list(labels = labels,
+             title = title)
+    ## extras drawn on top of the plot
     playState$ids <- list()
-    playState$brushed <- list()
     playState$annotations <- list()
-    playState$tools <- list()
+    if (!is.null(link.to)) {
+        playState$linked <- link.to$linked
+        playState$linked$subscribers <-
+            c(playState$linked$subscribers, playState)
+    } else {
+        playState$linked <- new.env(parent = baseenv())
+        playState$linked$ids <- list()
+        playState$linked$subscribers <- list(playState)
+    }
+    playState$undoStack <- list()
+    ## graphical user interface
+    playState$uiManager <- uiManager
+    playState$actionGroups <- actionGroups
     playState$widgets <-
         list(drawingArea = myDA,
              topToolbar = topToolbar,
@@ -393,52 +384,104 @@ playwith <-
              rightToolbar = rightToolbar,
              callToolbar = callToolbar,
              callEntry = callEntry,
-             undoButton = undoButton,
-             redoButton = redoButton,
              pageEntry = pageEntry,
              pageScrollbar = pageScrollbar,
              pageScrollBox = pageScrollBox,
              timeEntry = timeEntry,
              timeScrollbar = timeScrollbar,
              timeScrollBox = timeScrollBox,
-             promptBox = promptBox,
-             promptLabel = promptLabel,
+             coordsLabel = coordsLabel,
+             statusbar = statusbar,
+             statusbarBox = statusbarBox,
              vbox = myVBox,
              hbox = myHBox)
-    playState$on.close <- on.close
-    playState$.args <-
-        list(top.tools = top.tools,
-             left.tools = left.tools,
-             bottom.tools = bottom.tools,
-             right.tools = right.tools,
-             missing_time.mode = missing_time.mode,
-             data.points = data.points,
-             labels = labels,
-             title = title,
-             main.function = main.function)
+    ## set initial values of any parameters
+    for (i in seq_along(parameters)) {
+        parname <- names(parameters)[i]
+        parval <- parameters[[i]]
+        assign(parname, parval[1], envir=env)
+    }
+    ## make dynamic parameter tools
+    paramTbarNm <- paste("/", playwith.getOption("parameters.toolbar"), sep="")
+    paramTbar <- playState$uiManager$getWidget(paramTbarNm)
+    horiz <- (paramTbar["orientation"] == GtkOrientation["horizontal"])
+    for (i in seq_along(parameters)) {
+        parname <- names(parameters)[i]
+        parval <- parameters[[i]]
+        newTool <- try(parameterControlTool(playState, name=parname,
+                                            value=parval, horizontal=horiz))
+        if (inherits(newTool, "try-error")) next
+        paramTbar$insert(newTool, -1)
+    }
+    ## try to force redraw
+    gdkWindowProcessAllUpdates()
+    while (gtkEventsPending()) gtkMainIterationDo(blocking=FALSE)
+    ## fix toolbar sizes and hide empty toolbars
+    blockRedraws({
+        for (side in c("Top", "Left", "Bottom", "Right")) {
+            nm <- paste("/", side, "Toolbar", sep = "")
+            tbar <- playState$uiManager$getWidget(nm)
+            if (isTRUE(playState$show.toolbars) &&
+                length(tbar$getChildren()))
+            {
+                ## fix toolbar size
+                sz <- tbar$getAllocation()
+                if (side %in% c("Left", "Right")) {
+                    tbar$setSizeRequest(sz$width, -1)
+                } else {
+                    tbar$setSizeRequest(-1, sz$height)
+                }
+            } else {
+                tbar$hide()
+            }
+        }
+    })
+    ## try to force redraw
+    gdkWindowProcessAllUpdates()
+    while (gtkEventsPending()) gtkMainIterationDo(blocking=FALSE)
     ## do the plot
     playNewPlot(playState)
     invisible(playState)
 }
 
-playNewPlot <- function(playState)
+playNewPlot <- function(playState = playDevCur())
+{
+    if (isTRUE(playwith.getOption("catch.errors"))) {
+        tryCatch(doPlayNewPlot(playState),
+                 error = error_handler)
+    } else {
+        doPlayNewPlot(playState)
+    }
+}
+
+playReplot <- function(playState = playDevCur())
+{
+    if (isTRUE(playwith.getOption("catch.errors"))) {
+        tryCatch(doPlayReplot(playState),
+                 error = error_handler)
+    } else {
+        doPlayReplot(playState)
+    }
+}
+
+doPlayNewPlot <- function(playState)
 {
     playDevSet(playState)
     ## clear the current plot if any, to avoid lengthy redraws
-    playState$plot.ready <- FALSE
-    on.exit(playState$plot.ready <- TRUE)
+    playState$tmp$plot.ready <- FALSE
+    on.exit(playState$tmp$plot.ready <- TRUE)
     grid.newpage()
     playPrompt(playState, NULL)
     ## disable toolbars until this is over
     playFreezeGUI(playState)
     on.exit(playThawGUI(playState))
     ## hide scrollbars if they are not needed
-    if (playState$time.mode == FALSE) {
-        removeWidgetNicely(playState, playState$widgets$timeScrollBox,
+    if (!isTRUE(playState$time.mode)) {
+        hideWidgetNoRedraw(playState, playState$widgets$timeScrollBox,
                            horiz=TRUE)
     }
     if (playState$pages == 1) {
-        removeWidgetNicely(playState, playState$widgets$pageScrollBox,
+        hideWidgetNoRedraw(playState, playState$widgets$pageScrollBox,
                            horiz=FALSE)
     }
     ## find which component of the call takes arguments (xlim etc)
@@ -448,118 +491,46 @@ playNewPlot <- function(playState)
     updateAddressBar(playState)
     ## eval plot call
     ## (NOTE this will draw the plot UNLESS it is lattice or ggplot)
-    if (isTRUE(playwith.getOption("catch.errors"))) {
-      result <- tryCatch(eval(playState$call, playState$env),
-                         error = function(e)e)
-      if (inherits(result, "error")) {
-        callText <- deparseOneLine(playState$call)
-        msg <- paste("Error: ",
-                     conditionMessage(result),
-                     "\n in: \n",
-                     callText, sep="")
-        gmessage.error(msg)
-        return(result)
-      }
-    } else {
-      result <- eval(playState$call, playState$env)
-    }
+    result <- playState$result <-
+        eval(playState$call, playState$env)
     ## detect lattice
     playState$is.lattice <- (inherits(result, "trellis"))
     if (playState$is.lattice) playState$trellis <- result
     ## detect ggplot
     playState$is.ggplot <- (inherits(result, "ggplot"))
     if (playState$is.ggplot) playState$ggplot <- result
-
-    ## lattice needs subscripts argument to correctly identify points.
-    ## warn, and just show the within-panel indices unless subscripts=T
+    ## detect base graphics
+    ## TODO: use this elsewhere
+    playState$is.base <- (!playState$is.lattice &&
+                          !playState$is.ggplot &&
+                          is.null(playState$viewport))
+    ## lattice calls can fall back to an update() wrapper
     if (playState$is.lattice &&
-        playState$accepts.arguments &&
+        !playState$accepts.arguments) {
+        playState$call <- call("update", playState$call)
+        updateMainCall(playState)
+    }
+    ## lattice needs subscripts argument to correctly identify points.
+    ## otherwise warn, and just show the within-panel indices.
+    if (playState$is.lattice &&
         prod(dim(playState$trellis)) > 1)
     {
         if (is.null(playState$trellis$panel.args[[1]]$subscripts)) {
                 gmessage("Call may need subscripts=TRUE to correctly identify points.",
-                         title="Warning", icon="warning")
+                         title="Warning", icon="warning", parent = playState$win)
         }
     }
-
-    ## initialise tools and add them to the toolbars
-    ## note that these may be user-defined constructor functions
-    ## if a constructor evaluates to NA it is skipped
-    populateToolbar <- function(toolbar, tools)
-    {
-        for (i in seq_along(tools)) {
-            myName <- names(tools)[i]
-            if (!any(nchar(myName))) myName <- NA
-            toolFun <- eval(tools[[i]])
-            if (is.character(toolFun)) {
-                myName <- toolFun
-                toolFun <- toolConstructors[[myName]]
-            }
-            if (is.na(myName)) myName <-
-                paste(deparse(substitute(tools)), i, sep="_")
-            if (!is.function(toolFun)) {
-                warning("constructor for ", myName, " is not a function")
-                next
-            }
-            ## call the tool constructor
-            newTool <- try(toolFun(playState))
-            if (inherits(newTool, "try-error") || is.null(newTool)) {
-                warning("constructor for ", myName, " failed")
-                next
-            }
-            if (identical(newTool, NA)) next
-            result <- try(toolbar$insert(newTool, -1))
-            if (inherits(result, "try-error")) next
-            playState$tools[[myName]] <- newTool
-        }
-    }
-    ## set up toolbar tools
-    playState$tools <- list()
-    tbars <- playState$widgets[c("topToolbar", "leftToolbar",
-                                 "bottomToolbar", "rightToolbar")]
-    doToolbars <- quote({
-        for (tbar in tbars) {
-            for (x in rev(tbar$getChildren())) x$destroy()
-        }
-        with(playState$widgets, {
-            populateToolbar(topToolbar, playState$.args$top.tools)
-            populateToolbar(leftToolbar, playState$.args$left.tools)
-            populateToolbar(bottomToolbar, playState$.args$bottom.tools)
-            populateToolbar(rightToolbar, playState$.args$right.tools)
-        })
-        paramToolbar <- playState$widgets[[
-            paste(playwith.getOption("parameters.toolbar"), "Toolbar", sep="") ]]
-        horiz <- playwith.getOption("parameters.toolbar") %in% c("bottom","top")
-        params <- playState$parameters
-        for (i in seq_along(params)) {
-            parname <- names(params)[i]
-            parval <- params[[i]]
-            newTool <- try(parameterControlTool(playState, name=parname,
-                                                value=parval, horizontal=horiz))
-            if (inherits(newTool, "try-error")) next
-            if (i == 1) populateToolbar(paramToolbar, list("~~"))
-            paramToolbar$insert(newTool, -1)
-            populateToolbar(paramToolbar, list("~~"))
-        }
-        for (tbar in tbars) {
-            if (length(tbar$getChildren())) tbar$show()
-            else tbar$hide()
-        }
-    })
-    if (playState$is.lattice || playState$is.ggplot) eval(doToolbars)
-    else blockRedraws(eval(doToolbars), playState)
-    ## try to force redraw
-    gdkWindowProcessAllUpdates()
-    while (gtkEventsPending()) gtkMainIterationDo(blocking=FALSE)
+    ## initialisation actions for a new plot (see uiManager.R)
+    initActions(playState)
     ## continue
-    playPostPlot(result, playState)
+    playPostPlot(playState)
 }
 
-playReplot <- function(playState)
+doPlayReplot <- function(playState)
 {
-    if (isTRUE(playState$skip.redraws)) return()
-    playState$plot.ready <- FALSE
-    on.exit(playState$plot.ready <- TRUE)
+    if (isTRUE(playState$tmp$skip.redraws)) return()
+    playState$tmp$plot.ready <- FALSE
+    on.exit(playState$tmp$plot.ready <- TRUE)
     playDevSet(playState)
     grid.newpage()
     playPrompt(playState, NULL)
@@ -568,26 +539,27 @@ playReplot <- function(playState)
     on.exit(playThawGUI(playState))
     ## hide scrollbars if they are not needed
     if (playState$time.mode == FALSE) {
-        removeWidgetNicely(playState, playState$widgets$timeScrollBox,
+        hideWidgetNoRedraw(playState, playState$widgets$timeScrollBox,
                            horiz=TRUE)
     }
     if (playState$pages == 1) {
-        removeWidgetNicely(playState, playState$widgets$pageScrollBox,
+        hideWidgetNoRedraw(playState, playState$widgets$pageScrollBox,
                            horiz=FALSE)
     }
     ## update address bar with current call
     updateAddressBar(playState)
     ## eval plot call
     ## (NOTE this will draw the plot UNLESS it is lattice or ggplot)
-    result <- eval(playState$call, playState$env)
-    ## continue
-    playPostPlot(result, playState)
+    playState$result <- eval(playState$call, playState$env)
+     ## continue
+    playPostPlot(playState)
 }
 
-playPostPlot <- function(result, playState)
+playPostPlot <- function(playState)
 {
     ## set back to this device, since may have switched during plot
     playDevSet(playState)
+    result <- playState$result
     if (inherits(result, "trellis")) {
         ## work out panels and pages
         nPackets <- prod(dim(result))
@@ -597,19 +569,18 @@ playPostPlot <- function(result, playState)
             nPanels <- myLayout[1] * myLayout[2]
             if (myLayout[1] == 0) nPanels <- myLayout[2]
             nPages <- ceiling(nPackets / nPanels)
-            result$layout[3] <- 1
         }
         if (playState$page > nPages) playState$page <- 1
         playState$pages <- nPages
         ## plot trellis object (specified page only)
-        plot(result, packet.panel=packet.panel.page(playState$page))
+        plotOnePage(result, page = playState$page)
+        ## need to store this, it refers to last plot only!
+        playState$tmp$currentLayout <- trellis.currentLayout(which="packet")
         playState$trellis <- result
     }
     if (inherits(result, "ggplot")) {
         ## plot ggplot object
-        if (packageDescription("grid")$Version < package_version("2.7"))
-            print(result, pretty=FALSE) ## there is a bug in grid < 2.7
-        else print(result)
+        print(result)
         playState$ggplot <- result
         ## typically want: playState$viewport <- list(plot="panel_1_1")
         vpNames <- grid.ls(viewports=TRUE, grobs=FALSE, print=FALSE)$name
@@ -622,24 +593,12 @@ playPostPlot <- function(result, playState)
     }
     ## store coordinate system(s)
     generateSpaces(playState)
-    playState$plot.ready <- TRUE
-    ## run update actions on buttons
-    blockRedraws({
-        for (x in playState$tools) {
-            playDevSet(playState)
-            xUpd <- attr(x, "post.plot.action")
-            if (!is.null(xUpd)) {
-                if (!is.function(xUpd)) {
-                    warning("post.plot.action not a function")
-                    next
-                }
-                xUpd(x, playState=playState)
-            }
-        }
-        ## the pages scrollbar
-        pages_post.plot.action(playState$widgets$pageScrollBox,
-                               playState=playState)
-    })
+    playState$tmp$plot.ready <- TRUE
+    ## update toolitem and menuitem states (see uiManager.R)
+    updateActions(playState)
+    ## and update the pages scrollbar
+    pages_post.plot.action(playState$widgets$pageScrollBox,
+                           playState=playState)
     invisible(result)
 }
 
@@ -658,81 +617,85 @@ updateAddressBar <- function(playState)
             ## a new call: edited inline OR playState$call modified
             widg$callEntry$prependText(callTxt)
             widg$callEntry["active"] <- 0
-            histLev <- playState$.call.history.level
+            ## remove any later history
+            histLev <- playState$tmp$call.history.level
             if (any(histLev > 0)) {
-                ## remove later history
                 for (i in seq(histLev-1, 0)+1)
                   widg$callEntry$removeText(i)
             }
-            widg$undoButton["sensitive"] <- TRUE
         }
-        playState$.call.history.level <- widg$callEntry["active"]
-        widg$redoButton["sensitive"] <- (widg$callEntry["active"] > 0)
+        playState$tmp$call.history.level <- widg$callEntry["active"]
     }
 }
 
-## TODO: use new stuff in gridwork.R
 generateSpaces <- function(playState)
 {
-    playState$deviceToSpace <- list()
+    ## enumerate spaces in the current plot
+    ## (named list of viewports)
+    playState$spaces <- list()
     if (!is.null(playState$viewport)) {
         ## grid graphics plot
-        for (space in names(playState$viewport)) {
-            playState$deviceToSpace[[space]] <-
-                playDo(playState, deviceToUserCoordsFunction(), space=space)
-        }
-    }
-    else if (playState$is.lattice) {
+        playState$spaces <- names(playState$viewport)
+    } else if (playState$is.lattice) {
         ## lattice plot
-        packets <- trellis.currentLayout(which="packet")
-        for (pn in packets[packets > 0]) {
-            space <- paste("packet", pn)
-            playState$deviceToSpace[[space]] <-
-                playDo(playState, deviceToUserCoordsFunction(), space=space)
-        }
-    }
-    else {
+        packets <- playState$tmp$currentLayout
+        playState$spaces <- paste("packet", packets[packets > 0])
+    } else {
         ## base graphics plot
+        playState$spaces <- "plot"
+        ## use gridBase to make viewports
         upViewport(0)
-        if (length(playState$baseViewports$plot.clip.off)) {
-            test <- try(downViewport(playState$baseViewports$plot.clip.off),
+        if (length(playState$tmp$baseVps$plot.clip.off)) {
+            test <- try(seekViewport("plot.clip.off"),
                         silent=TRUE)
-            if (!inherits(test, "try-error") && length(current.vpPath()))
+            if (!inherits(test, "try-error"))
                 popViewport(0)
         }
-        ## suppressWarnings about log scale
+        ## suppress warnings about log scale
         vps <- suppressWarnings(baseViewports())
-        playState$baseViewports <- list()
-        pushViewport(vps$inner)
-        playState$baseViewports$inner <- current.vpPath()
-        pushViewport(vps$figure)
-        playState$baseViewports$figure <- current.vpPath()
-        ## set clipping
+        vps$plot$name <- "plot"
         vps$plot$clip <- TRUE
-        pushViewport(vps$plot)
-        playState$baseViewports$plot <- current.vpPath()
-        pushViewport(viewport(
-                              xscale=convertX(unit(0:1, "npc"), "native"),
-                              yscale=convertY(unit(0:1, "npc"), "native"),
-                              clip="off"))
-        playState$baseViewports$plot.clip.off <- current.vpPath()
-        upViewport(4)
-        playState$deviceToSpace[["plot"]] <-
-            playDo(playState, deviceToUserCoordsFunction(), space="plot")
+        vps$plot.clip.off <-
+            viewport(xscale=par("usr")[1:2],
+                     yscale=par("usr")[3:4],
+                     clip="off", name = "plot.clip.off")
+        playState$tmp$baseVps <- vps
+        pushViewport(do.call("vpStack", vps))
     }
-    playState$.need.reconfig <- FALSE
+    upViewport(0)
+    ## create a top-level viewport with normalised coordinates
+    ## yscale origin is at top, to be consistent with device coordinates
+    test <- try(downViewport("pageAnnotationVp"), silent = TRUE)
+    if (inherits(test, "try-error"))
+        pushViewport(viewport(name = "pageAnnotationVp",
+                              yscale = c(1, 0)))
+    upViewport(0)
+    ## store coordinate transformations for each space
+    playState$tmp$spaceLimDevice <- list()
+    for (space in playState$spaces) {
+        ## bounds in device coordinates (pixels)
+        playState$tmp$spaceLimDevice[[space]] <-
+            playDo(playState,
+                   convertToDevicePixels(x = unit(0:1, "npc"),
+                                         y = unit(0:1, "npc")),
+                   space = space)
+    }
+    playState$tmp$need.reconfig <- FALSE
 }
 
-removeWidgetNicely <- function(playState, widget, horiz)
+### Error handler
+
+error_handler <- function(e)
 {
-    whichDim <- if (horiz) "height" else "width"
-    if (widget["visible"]) blockRedraws({
-        widgSize <- widget$getAllocation()
-        winSize <- playState$win$getSize()
-        widget["visible"] <- FALSE
-        winSize[[whichDim]] <- winSize[[whichDim]] - widgSize[[whichDim]]
-        playState$win$resize(winSize$width, winSize$height)
-    })
+    if (inherits(e, "error")) {
+        callText <- toString(deparseOneLine(conditionCall(e)),
+                             width = 200)
+        msg <- paste("Error: ", conditionMessage(e),
+                     "\n\nThe error occurred in: \n",
+                     callText, sep="")
+        gmessage.error(msg)
+    }
+    e
 }
 
 ### Window signal handlers
@@ -757,10 +720,15 @@ pages_post.plot.action <- function(widget, playState)
 
 window.close_handler <- function(widget, event, playState)
 {
+    if (isTRUE(playState$keep)) {
+        ans <- gconfirm("This plot is marked to keep open. Really close?",
+                        parent = playState$win)
+        if (!isTRUE(ans)) return(TRUE) ## do not close
+    }
     if (!is.null(playState$on.close)) {
         foo <- try(playState$on.close(playState))
         ## if on.close() returns TRUE, do not close the window
-        if (identical(foo, TRUE)) return(TRUE)
+        if (isTRUE(foo)) return(TRUE)
     }
     ## close the window and clean up
     playDevOff(playState)
@@ -769,7 +737,7 @@ window.close_handler <- function(widget, event, playState)
 
 configure_handler <- function(widget, event, playState)
 {
-    playState$.need.reconfig <- TRUE
+    playState$tmp$need.reconfig <- TRUE
     return(FALSE)
 }
 
@@ -777,13 +745,13 @@ auto.reconfig_handler <- function(widget, event, playState)
 {
     ## avoid weird stack smash
     if (length(playState$is.lattice) == 0) return(FALSE)
-    if (!isTRUE(playState$plot.ready)) return(FALSE)
+    if (!isTRUE(playState$tmp$plot.ready)) return(FALSE)
     if (isBasicDeviceMode(playState)) {
         ## do not know when the plot is updated
         ## so need to keep regenerating data space
-        playState$.need.reconfig <- TRUE
+        playState$tmp$need.reconfig <- TRUE
     }
-    if (playState$.need.reconfig) {
+    if (playState$tmp$need.reconfig) {
         generateSpaces(playState)
     }
     return(FALSE)
@@ -793,9 +761,8 @@ devoff_handler <- function(widget, event, playState)
 {
     ## this handles dev.off()
     ## destroy the window, but store a flag to avoid destroying twice
-    if (isTRUE(playState$devoff)) return(FALSE)
-    playState$devoff <- TRUE
-    #widget$destroy() ## TODO: need this?
+    if (isTRUE(playState$tmp$devoff)) return(FALSE)
+    playState$tmp$devoff <- TRUE
     playDevOff(playState)
     return(FALSE)
 }
@@ -805,8 +772,8 @@ gtkmain_handler <- function(widget, event, playState)
   if (!isTRUE(playState$show.tooltips))
     return(gtkmainquit_handler(widget, event, playState))
   ## switch to GTK event loop while the window is in focus (for tooltips)
-  if (!isTRUE(playState$.gtkMain)) {
-    playState$.gtkMain <- TRUE
+  if (!isTRUE(playState$tmp$gtkMain)) {
+    playState$tmp$gtkMain <- TRUE
     gtkMain()
   }
   return(FALSE)
@@ -814,8 +781,8 @@ gtkmain_handler <- function(widget, event, playState)
 
 gtkmainquit_handler <- function(widget, event, playState)
 {
-  if (isTRUE(playState$.gtkMain)) {
-    playState$.gtkMain <- FALSE
+  if (isTRUE(playState$tmp$gtkMain)) {
+    playState$tmp$gtkMain <- FALSE
     gtkMainQuit()
   }
   return(FALSE)
@@ -823,23 +790,10 @@ gtkmainquit_handler <- function(widget, event, playState)
 
 ## General utility functions
 
-## NOT USED. +.layer approach better i think.
-plotadd <- function(FUN, ..., add.stuff=expression()) {
-    force(FUN)
-    foo <- sys.call()
-    foo[[1]] <- foo[[2]]
-    foo <- foo[-2]
-    foo$add.stuff <- NULL
-    retval <- eval.parent(foo)
-    for (x in add.stuff) eval.parent(x)
-    retval
-}
-
-## TODO: this fails with one-line inline functions
 deparseOneLine <-
-    function(expr, width.cutoff=500, ...)
+    function(expr, width.cutoff = 500, ...)
 {
-    tmp <- deparse(expr, width.cutoff=width.cutoff, ...)
+    tmp <- deparse(expr, width.cutoff = width.cutoff, ...)
     indents <- attr(regexpr("^ *", tmp), "match.length")
     breaks <- c(diff(indents) <= 0, FALSE)
     tmp <- gsub("^ +", "", tmp)
@@ -849,10 +803,12 @@ deparseOneLine <-
     tmp <- gsub("\\{;", "\\{", tmp)
     tmp <- gsub(";\\}", " \\}", tmp)
     tmp <- gsub(";\\{", " \\{", tmp)
+    ## update: need this for long inline vectors:
+    tmp <- gsub(";,", ",", tmp)
     tmp
 }
 
-xy.coords.call <-
+plotCoords.default <-
     function(the.call, envir=parent.frame(), log=NULL, recycle=TRUE)
 {
     stopifnot(is.call(the.call))
@@ -861,11 +817,11 @@ xy.coords.call <-
     tmp.x <- eval(the.call$x, envir)
     tmp.y <- if ('y' %in% names(the.call)) eval(the.call$y, envir)
     if (inherits(tmp.x, "zoo") && is.null(tmp.y))
-        return(xy.coords(stats::time(tmp.x), as.vector(tmp.x), log=log, recycle=recycle))
-    xy.coords(tmp.x, tmp.y, log=log, recycle=recycle)
+        return(xy.coords(stats::time(tmp.x), as.vector(tmp.x),
+                         log = log, recycle = recycle))
+    xy.coords(tmp.x, tmp.y, log = log, recycle = recycle)
 }
 
-## export this?
 copyLocalArgs <-
     function(the.call,
              envir = parent.frame(),
@@ -977,18 +933,13 @@ recursive.as.list.call <- function(x) {
            recursive.as.list.call(z) else z)
 }
 
-## by Deepayan Sarkar <Deepayan.Sarkar@R-project.org>
-
-packet.panel.page <- function(n)
+plotOnePage <- function(x, page, ...)
 {
-    ## returns a function that when used as the 'packet.panel'
-    ## argument in print.trellis plots page number 'n' only
-    function(layout, page, ...) {
-        stopifnot(layout[3] == 1)
-        packet.panel.default(layout = layout,
-                             page = page + n - 1,
-                             ...)
-    }
+    n <- page
+    if (!is.null(x$layout))
+        x$layout[3] <- 1
+    ## based on code by Deepayan Sarkar
+    packet.panel.pageN <- function(..., page)
+        packet.panel.default(..., page = page + n - 1)
+    plot(x, packet.panel = packet.panel.pageN, ...)
 }
-
-

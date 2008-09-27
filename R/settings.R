@@ -3,69 +3,72 @@
 ## Copyright (c) 2007 Felix Andrews <felix@nfrac.org>
 ## GPL version 2 or newer
 
-
 .defaultPlaywithOptions <- function()
     list(
-         ## named arguments to playwith():
+         ## explicit arguments to playwith():
          new = FALSE,
-         top.tools = list(
-         "options",
-         "stayontop",
-         "keep",
-         "save",
-         "copy",
-         "print",
-         "data",
-         "--",
-         "settings",
-         "theme",
-         "---",
-         "time.mode"
-         ),
-         left.tools = list(
-         "expand",
-         "identify",
-         "annotate",
-         "arrow",
-         "edit.annotations",
-         "undo.annotation",
-         "brush",
-         "clear",
-         "--",
-         "zoomin.3d",
-         "zoomout.3d",
-         "fly.left.3d",
-         "fly.right.3d",
-         "zoom",
-         "zoomout",
-         "zoomfit",
-         "zero",
-         "--",
-         "inspector",
-         "---",
-         "coords",
-         "clickhandler"
-         ),
-         bottom.tools = list(),
-         right.tools = list(),
          width = 6,
-         height = 5,
-         pointsize = 10,
+         height = 6,
+         pointsize = 12,
+         click.mode = "Zoom",
+         time.mode = FALSE,
          eval.args = NA,
+         on.close = NULL,
          ## implicit arguments to playwith():
-         ## (can be over-ridden by explicit arguments)
-         show.tooltips = FALSE,
-         annotation.mode = "plot",
-         clip.annotations = FALSE,
-         label.style = NULL,
+         page.annotation = FALSE,
+         clip.annotations = TRUE,
          label.offset = 0.5,
-         arrow.style = NULL,
-         arrow.arrow = quote(arrow(length=unit(0.15, "inches"))),
+         arrow = list(length = 0.15, unit = "inches"),
+         ## themes:
+         themes = alist(
+         "Default" = trellis.par.set(standard.theme("pdf")),
+         "WhiteBG" = trellis.par.set(col.whitebg()),
+         "Greyscale (for print)" = trellis.par.set(standard.theme("postscript")),
+         "DarkBG" = trellis.par.set(standard.theme("X11")),
+         "ColorBrewer 1" = trellis.par.set(custom.theme()),
+         "ColorBrewer 2" = trellis.par.set(custom.theme.2()),
+         "ColorBrewer Black" = trellis.par.set(custom.theme.black())
+         ),
+         styleShortcuts = alist(
+         "Transparent strips" =
+         trellis.par.set(list(strip.background = list(col = "transparent"),
+                              strip.shingle = list(col = grey(0.1)))),
+         "Grey strips" =
+         trellis.par.set(list(strip.background = list(col = grey(7:1/8)),
+                              strip.shingle = list(col = grey(6:0/8)))),
+         "Grey color ramp" =
+         trellis.par.set(list(regions = list(col = colorRampPalette(brewer.pal(9, "Greys"))(100)))),
+         "Spectral color ramp" =
+         trellis.par.set(list(regions = list(col = colorRampPalette(brewer.pal(11, "Spectral"))(100)))),
+         "Red vs blue via white" =
+         trellis.par.set(list(regions = list(col = colorRampPalette(brewer.pal(11, "RdBu"))(100)))),
+         "Dry vs wet (BrBG)" =
+         trellis.par.set(list(regions = list(col = colorRampPalette(brewer.pal(11, "BrBG"))(100)))),
+         "Yl - Gn - Bu" =
+         trellis.par.set(list(regions = list(col = colorRampPalette(brewer.pal(9, "YlGnBu"))(100)))),
+         "Yl - Or - Rd" =
+         trellis.par.set(list(regions = list(col = colorRampPalette(brewer.pal(9, "YlOrRd"))(100)))),
+         "Layout as table" =
+         lattice.options(default.args = list(as.table = TRUE))
+         ),
          ## global:
-         parameters.toolbar = "bottom",
+         save.as.format = "pdf",
+         ui.menus.xml = system.file("etc", "ui.menus.xml", package="playwith"),
+         ui.toolbars.xml = system.file("etc", "ui.toolbars.xml", package="playwith"),
+         ui.custom.xml = NULL,
+         custom.tools = NULL,
+         update.actions = NULL,
+         init.actions = NULL,
+         custom.toolbar = "BottomToolbar",
+         parameters.toolbar = "BottomToolbar",
          toolbar.style = "both",
+         show.toolbars = TRUE,
+         show.calltoolbar = TRUE,
+         show.menubar = TRUE,
+         show.statusbar = TRUE,
+         show.tooltips = FALSE,
          catch.errors = TRUE,
-         deparse.options = c("keepInteger")
+         deparse.options = c()
          )
 
 ## code below copied from lattice

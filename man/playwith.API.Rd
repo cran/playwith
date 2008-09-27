@@ -1,276 +1,225 @@
 \name{playwith.API}
 \alias{playwith.API}
+\alias{playDevCur}
+\alias{playDevSet}
+\alias{playDevList}
+\alias{playDevOff}
+\alias{playReplot}
+\alias{playNewPlot}
+\alias{playSourceCode}
+\alias{playUnlink}
+\alias{playAnnotate}
+\alias{playPrompt}
+\alias{playFreezeGUI}
+\alias{playThawGUI}
 \title{The playwith API}
 \description{
-  The \code{\link{playwith}} Application Programming Interface.
+  The \pkg{playwith} Application Programming Interface.
 }
 \details{
-	A \code{playwith} tool is a function ("constructor") that creates
-	a graphical-user-interface widget (a \code{\link[RGtk2]{gtkToolItem}}).
-	That widget may also have functions attached to it, which are run in
-	response to user interaction, or every time the plot is drawn.
+  \code{\link{playwith}} plots (incorporating a plot, window and device)
+  are represented by a \code{\link{playState}} object.
 
-	Constructors should use the
-	convenience function \code{\link{quickTool}} where possible.
-	If the constructor function returns \code{NA}, that tool is skipped.
-	So one should check whether the tool can work with the current plot,
-	and skip it otherwise.
+%	A \code{playwith} tool is a function ("constructor") that creates
+%	a graphical-user-interface widget (a \code{\link[RGtk2]{gtkToolItem}}).
+%	That widget may also have functions attached to it, which are run in
+%	response to user interaction, or every time the plot is drawn.
 
-	Simple tools to control parameters can be created with
-	the convenience function \code{\link{parameterControlTool}},
-	corresponding to the \code{parameters} argument of \code{\link{playwith}}.
+%	Constructors should use the
+%	convenience function \code{\link{quickTool}} where possible.
+%	If the constructor function returns \code{NA}, that tool is skipped.
+%	So one should check whether the tool can work with the current plot,
+%	and skip it otherwise.
 
-	Following is a table of the API functions that can be used by tools.
+%	Simple tools to control parameters can be created with
+%	the convenience function \code{\link{parameterControlTool}},
+%	corresponding to the \code{parameters} argument of \code{\link{playwith}}.
+
+	Following is a table of the API functions that can be used to
+	work with the plot, and to write new interactive tools.
 	See the links to specific help pages for details.
-	In case these are inadequate, you may work with the \code{\link{playState}} object
-	itself.
+	In case these are insufficient, you may work with the
+	\code{\link{playState}} object itself.
 
-\preformatted{
-\link{playDevCur}()
-\link{playDevList}()
-\link{playDevSet}(playState)
-\link{playDevOff}(playState = playDevCur())
+	\section{Device management}{
+	  These are similar to \code{\link{dev.set}} etc.
+	  \describe{
+	    \item{\code{playDevCur()}}{
+	      returns the current or last
+	      active \code{playState} -- this is not necessarily the active
+	      graphics device.
+	    }
+	    \item{\code{playDevList()}}{
+	      lists all open \code{playState}s.
+	    }
+	    \item{\code{playDevSet(playState)}}{
+	      sets the current \code{playState}, and sets the active
+	      graphics device.
+	    }
+	    \item{\code{playDevOff(playState)}}{
+	      closes the device and window (\code{dev.off()} also
+	      works).
+	    }
+	  }
+	}
 
-\link{playGetIDs}(playState = playDevCur(), labels = FALSE)
+	\section{Common user commands}{
+	  These functions are also available as menu items.
+	  \describe{
+	    \item{\code{\link{playGetIDs}(playState, type, labels)}}{
+	      returns indices (or labels) of currently brushed or labelled
+	      data points.
+	    }
+	    \item{\code{\link{playSetIDs}(playState, value, type, space,
+		redraw)}}{
+	      sets which data points are brushed or
+	      labelled. \code{type} defaults to \code{"brushed"};
+	      \code{space} is ignored unless \code{type = "ids"}.
+	    }
+	    \item{\code{\link{playClear}(playState, type, redraw)}}{
+	      remove one or more of the \code{type}s
+	      \code{"annotations"}, \code{"ids"}, \code{"brushed"}. The
+	      latter will also apply to any linked plots. If
+	      \code{redraw = FALSE} the display will not be updated.
+	    }
+	    \item{\code{playUnlink(playState)}}{ removes links from the
+	      given plot to any other plots (for linked brushing).
+	    }
+	    \item{\code{playSourceCode(playState)}}{ returns (deparsed)
+	      R code to reproduce the current plot display.
+	    }
+	  }
+	}
 
-\link{playNewPlot}(playState)
-\link{playReplot}(playState)
+	\section{Interaction}{
+	  These functions allow the user to click or drag on the plot.
+	  Click or drag locations are converted into the native
+	  coordinates of whatever plot \dfn{space} they occurred in (but
+	  are available as device coordinates too).
+	  \describe{
+	    \item{\code{\link{playSelectData}(playState, prompt, foo)}}{
+	      interactively select data from the plot (one point or a
+	      whole region). }
+	    \item{\code{\link{playPointInput}(playState, prompt)}}{ prompt for
+	      a click on the plot. Similar to \code{\link{locator}}. }
+	    \item{\code{\link{playLineInput}(playState, prompt)}}{ prompt to
+	      drag a line. }
+	    \item{\code{\link{playRectInput}(playState, prompt)}}{ prompt to
+	      drag a rectangular region. }
+	    \item{\code{playPrompt(playState, text)}}{ sets the
+	      statusbar text. Pass \code{NULL} to reset. The GUI is
+	      frozen when the prompt is set and unfrozen when reset. }
+	    \item{\code{playFreezeGUI(playState)},
+	      \code{playThawGUI(playState)}}{
+	      disables or re-enables the GUI. }
+	  }
+	}
 
-\link{callArg}(playState, arg, expr, data = NULL)
-\link{callArg}(playState, arg, expr) <- value
+	\section{Working with the display}{
+	  \describe{
+	    \item{\code{\link{playDo}(playState, expr, space, clip.off,
+		return.code)}}{ evalutes the given expression in the
+	      given plot \dfn{space}, i.e. after moving to the
+	      corresponding grid viewport.
+	    }
+	    \item{\code{playAnnotate(playState, annot, space)}}{
+	      adds the annotation (a call or expression to draw on the
+	      plot) to the list of persistent annotations, and draws
+	      them. These will always be drawn after plotting (unless they
+	      are removed by the user).
+	    }
+	    \item{\code{\link{rawXLim}(playState, space)}}{
+	      gets or sets the x axis limits, in native coordinates of
+	      the given \dfn{space} (viewport).
+	    }
+	    \item{\code{rawYLim(playState, space)}}{
+	      same as \code{rawXLim}, for y axis limits.
+	    }
+	    \item{\code{\link{spaceCoordsToDataCoords}(playState, xy)}}{
+	      converts raw space (viewport) coordinates to the data
+	      scale by applying an inverse log transformation if
+	      necessary. If there are no log scales this does nothing.
+	    }
+	    \item{\code{dataCoordsToSpaceCoords(playState, xy)}}{
+	      converts data coordinates to raw space (viewport)
+	      coordinates by applying a log transformation if
+	      necessary. If there are no log scales this does nothing.
+	    }
+	  }
+	}
 
-\link{playDo}(playState, expr, space = "plot", clip.off = FALSE)
+	\section{Working with the call}{
+	  \describe{
+	    \item{\code{\link{callArg}(playState, arg, eval, data)}}{
+	      gets or sets arguments to the main plot call.
+	    }
+	    \item{\code{\link{mainCall}(playState)}}{ gets or replaces
+	      the main plot call (which is not necessarily the same as
+	      the top-level call, \code{playState$call}).
+	    }
+	    \item{\code{\link{updateMainCall}(playState)}}{
+	      locates the main plot call within the top-level call -- by
+	      matching against the given \code{main.function}, or by
+	      guessing. This allows \code{callArg()} to work correctly;
+	      it should be called if \code{playState$call} is replaced.
+	    }
+	    \item{\code{playReplot(playState)}}{
+	      redraws the plot by evaluating the plot call, and runs
+	      \dfn{update actions}.
+	      This should
+	      be called after changing plot arguments (or annotations if
+	      that requires a redraw). However, if the data has changed
+	      or the type of plot (e.g. the high-level plot function)
+	      has changed, \code{playNewPlot} should be used instead.
+	      \code{playReplot} is triggered when zooming,
+	      editing plot settings, removing annotations, etc.
+	    }
+	    \item{\code{playNewPlot(playState)}}{
+	      redraws the plot by evaluating the plot call,
+	      updates the main call, runs
+	      \dfn{init actions} (such as detecting whether zooming,
+	      identifying or brushing data points is possible),
+	      as well as running \dfn{update actions} as with
+	      \code{playReplot}.
+	      Note: \code{playNewPlot} is triggered when the call text
+	      is edited manually in the GUI.
+	    }
+	  }
+	}
 
-\link{xyCoords}(playState, space = "plot")
-\link{xyData}(playState, space = "plot")
-
-\link{playSelectData}(playState, prompt)
-\link{playPointInput}(playState, prompt)
-\link{playLineInput}(playState, prompt)
-\link{playRectInput}(playState, prompt, scales = c("x", "y"))
-
-\link{rawXLim}(playState, space = "plot")
-\link{rawYLim}(playState, space = "plot")
-\link{rawXLim}(playState) <- value
-\link{rawYLim}(playState) <- value
-\link{spaceCoordsToDataCoords}(playState, xy)
-\link{dataCoordsToSpaceCoords}(playState, xy)
-
-\link{whichSpace}(playState, x.device, y.device)
-\link{deviceCoordsToSpace}(playState, x.device, y.device,
-	space = "plot")
-
-\link{playPrompt}(playState, text = NULL)
-\link{playFreezeGUI}(playState)
-\link{playThawGUI}(playState)
-\link{blockRedraws}(expr, playState = playDevCur())
-}
+	\section{Working with data}{
+	  \describe{
+	    \item{\code{\link{xyData}(playState, space)}}{
+	      attempts to extract plot data in terms of x and y
+	      locations, but in the original data form (such as factor,
+	      date or time). This uses the generic function
+	      \code{\link{plotCoords}} to generate plot locations;
+	      new methods can be defined for non-standard plot types.
+	    }
+	    \item{\code{\link{xyCoords}(playState, space)}}{
+	      same as \code{xyData}, converted to numeric coordinates.
+	    }
+	    \item{\code{\link{getDataArg}(playState, eval)}}{
+	      attempts to extract the underlying data set (typically a
+	      data.frame), which may contain more variables than those
+	      currently plotted. This may come from a \code{data}
+	      argument to the plot call, or from a \code{with()} block.
+	    }
+	  }
+	}
 
 }
 \author{ Felix Andrews \email{felix@nfrac.org}  }
-\seealso{ \code{\link{playwith}} }
+\seealso{
+  \code{\link{playwith}},
+  \code{\link{convertFromDevicePixels}}
+}
 \examples{
 if (interactive()) {
 
-## 1. A toggle button to draw "Hello world" text.
-
-## constructor function
-helloTool <- function(playState) {
-	quickTool(playState,
-		label = "Greeting",
-		icon = "gtk-yes",
-		tooltip = "Draw 'Hello world' text",
-		f = hello_handler,
-		post.plot.action = hello_postplot_action,
-		isToggle = TRUE)
-}
-
-## this is called when the button is clicked
-hello_handler <- function(widget, playState) {
-	## need to re-draw plot to remove label
-	if (!widget["active"]) {
-		playReplot(playState)
-		return()
-	}
-	hello_postplot_action(widget, playState)
-}
-
-## this is called after the plot is drawn (or re-drawn)
-hello_postplot_action <- function(widget, playState) {
-	## do nothing if the toggle button is off
-	if (!widget["active"]) return()
-	## draw text centered on the page
-	grid.text("Hello world", gp=gpar(cex=2))
-}
-
-## add new button to a plot window (the bottom toolbar)
-playwith(plot(1:10), bottom=list(helloTool))
-
-
-## 2. Select subset of data and show marginal histograms.
-##    It stores state info in the local environment.
-
-## constructor function
-subsetTool <- function(playState) {
-	## set up a list to store state
-	playState$subsetTool <- list()
-	quickTool(playState,
-		label = "Data subset",
-		icon = "gtk-justify-fill",
-		tooltip = "Select a subset of data points for stats",
-		f = subset_handler,
-		post.plot.action = subset_postplot_action)
-}
-
-## this is called when the button is clicked
-subset_handler <- function(widget, playState) {
-	foo <- playSelectData(playState)
-	if (is.null(foo)) return()
-	nSubsets <- length(playState$subsetTool)
-	playState$subsetTool[[nSubsets+1]] <- foo
-	drawSubsetBox(playState, foo)
-}
-
-## draw one subset box with marginal histograms
-drawSubsetBox <- function(playState, foo) {
-	xy <- xyCoords(playState, space=foo$space)
-	playDo(playState, with(foo, {
-		xc <- mean(coords$x)
-		yc <- mean(coords$y)
-		wd <- abs(diff(coords$x))
-		ht <- abs(diff(coords$y))
-		pushViewport(viewport(default.units="native",
-			x=xc, y=yc, width=wd, height=ht,
-			xscale=range(coords$x), yscale=range(coords$y),
-			gp=gpar(alpha=0.3), clip="off"))
-		grid.rect(gp=gpar(fill="yellow"))
-		## draw sample size text
-		grid.text(paste("n=", length(x), sep=""),
-			x=unit(0.98, "npc"), y=unit(0.98, "npc"),
-			just=c("right", "top"), gp=gpar(cex=1.5))
-		## histogram of x values, outside x-axis
-		h <- hist(x, plot=FALSE)
-		hval <- unit(4 * h$counts / length(x), "cm")
-		grid.rect(x=h$breaks[-1], y=unit(0, "npc"),
-			height=hval, width=diff(h$breaks),
-			just=c("right", "top"), default.units="native",
-			gp=gpar(fill="purple"))
-		## histogram of y values, outside y-axis
-		h <- hist(y, plot=FALSE)
-		hval <- unit(4 * h$counts / length(x), "cm")
-		grid.rect(y=h$breaks[-1], x=unit(0, "npc"),
-			height=diff(h$breaks), width=hval,
-			just=c("right", "top"), default.units="native",
-			gp=gpar(fill="purple"))
-		popViewport()
-	}), space=foo$space)
-}
-
-## this is called after the plot is drawn (or re-drawn)
-subset_postplot_action <- function(widget, playState) {
-	for (foo in playState$subsetTool)
-		drawSubsetBox(playState, foo)
-}
-
-## add new button to a plot window (the bottom toolbar)
-playwith(xyplot(temperature ~ radiation, environmental),
-	bottom=list(subsetTool))
-
-
-## 3. A button to interactively add or remove data points.
-
-## constructor function, with handler in-line
-addTool <- function(playState) {
-	quickTool(playState,
-		label = "Add points",
-		icon = "gtk-add",
-		tooltip = "Add data points by clicking",
-		f = function(widget, playState) repeat {
-			foo <- playSelectData(playState, prompt=paste(
-				"Click to add a point.",
-				"Shift-click to delete.",
-				"Right-click to stop."))
-			if (is.null(foo)) return()
-			xy <- xyData(playState)
-			if (foo$modifiers & GdkModifierType["shift-mask"]) {
-				## shift-click: delete data points
-				xy$x[foo$which] <- NA
-				xy$y[foo$which] <- NA
-			} else {
-				## add data point at click location
-				xy$x <- c(xy$x, foo$coords$x[1])
-				xy$y <- c(xy$y, foo$coords$y[1])
-			}
-			## store in local environment
-			playState$env$localxy <- xy
-			if (playState$is.lattice) {
-				## lattice plot: use `data` argument
-				callArg(playState, 1) <- quote(y ~ x)
-				callArg(playState, "data") <- quote(localxy)
-			} else {
-				## otherwise set first argument to plot
-				callArg(playState, 1) <- quote(localxy)
-				callArg(playState, "y") <- NULL
-			}
-			playReplot(playState)
-		})
-}
-ydata <- c(1:4, 2:1, 5:8)
-playwith(xyplot(ydata ~ 1:10, type=c("p", "smooth"), pch=8),
-	left=list(addTool))
-
-
-## 4. A more complex toolbar item: a "spinbutton" to
-##    group the data into `n` clusters (in plot or xyplot).
-
-## constructor function
-clusterTool <- function(playState) {
-	spinner <- gtkSpinButton(min=1, max=10, step=1)
-	spinner["value"] <- 1
-	gSignalConnect(spinner, "value-changed", cluster_handler,
-		data=playState)
-	vbox <- gtkVBox()
-	vbox$packStart(gtkLabel("Clusters:"))
-	vbox$packStart(spinner)
-	foo <- gtkToolItem()
-	foo$add(vbox)
-	foo
-}
-
-## this is called when the spinner value changes
-cluster_handler <- function(widget, playState) {
-	n <- widget["value"]
-	xy <- xyCoords(playState)
-	groups <- NULL
-	if (n > 1) {
-		clusts <- kmeans(cbind(xy$x,xy$y), n)
-		labels <- paste("#", 1:n, " (n = ", clusts$size, ")", sep="")
-		groups <- factor(clusts$cluster, labels=labels)
-	}
-	## avoid a big vector inline in the call, store in local env
-	if (playState$is.lattice) {
-		playState$env$auto.groups <- groups
-		callArg(playState, "groups") <- quote(auto.groups)
-	} else {
-		playState$env$auto.groups <- unclass(groups)
-		callArg(playState, "col") <- quote(auto.groups)
-		if (is.null(groups)) callArg(playState, "col") <- NULL
-	}
-	playReplot(playState)
-}
-
-## need to generate random data outside the plot call!
-xdata <- rnorm(100)
-ydata <- rnorm(100) * xdata / 2
-## works with lattice::xyplot
-playwith(xyplot(ydata ~ xdata, aspect="iso",
-	auto.key=list(space="right")),
-	left=list(clusterTool))
-## same tool works with graphics::plot
-playwith(plot(ydata ~ xdata), left=list(clusterTool))
+demo(package = "playwith")
 
 }
 }
-\keyword{ iplot }
 \keyword{ programming }
 \keyword{ utilities }
