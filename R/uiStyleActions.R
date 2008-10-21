@@ -7,12 +7,12 @@ createStyleActions <- function(playState, manager)
 {
     ## TODO: use real GtkAction s
     ## add custom items to style submenus
+    ## style shortcuts
     do.style_handler <- function(widget, theme) {
         playDevSet(playState)
         eval(theme, list(playState = playState), globalenv())
         playReplot(playState)
     }
-    ## style shortcuts
     ssMenu <- manager$getWidget("/MenuBar/StyleMenu/ShortcutsMenu")
     if (!is.null(ssMenu)) {
         ssMenu <- ssMenu$getSubmenu()
@@ -28,6 +28,12 @@ createStyleActions <- function(playState, manager)
         }
     }
     ## themes
+    do.theme_handler <- function(widget, theme) {
+        playDevSet(playState)
+        eval(theme, list(playState = playState), globalenv())
+        trellis.par.set(user.text = NULL)
+        playReplot(playState)
+    }
     thMenu <- manager$getWidget("/MenuBar/StyleMenu/ThemesMenu")
     if (!is.null(thMenu)) {
         thMenu <- thMenu$getSubmenu()
@@ -38,7 +44,7 @@ createStyleActions <- function(playState, manager)
         for (nm in names(themes)) {
             item <- gtkMenuItem(nm)
             thMenu$append(item)
-            gSignalConnect(item, "activate", do.style_handler,
+            gSignalConnect(item, "activate", do.theme_handler,
                            data = themes[[nm]])
         }
     }
@@ -109,12 +115,130 @@ style.thick.lines_handler <- function(widget, playState)
     playReplot(playState)
 }
 
+set.point.line.style_handler <- function(widget, playState)
+{
+    playFreezeGUI(playState)
+    on.exit(playThawGUI(playState))
+    ## constants
+    pchList <-
+        list(`open circle` = 1,
+             `open square` = 0,
+             `open diamond` = 5,
+             `open triangle` = 2,
+             `open tri.down` = 6,
+             `solid circle` = 16,
+             `solid square` = 15,
+             `solid diamond` = 18,
+             `solid triangle` = 17,
+             `fill circle` = 21,
+             `fill square` = 22,
+             `fill diamond` = 23,
+             `fill triangle` = 24,
+             `fill tri.down` = 25,
+             `plus (+)` = 3,
+             `cross (x)` = 4,
+             `star (*)` = 8,
+             `dot (.)` = "."
+             )
+    pchName <- function(x) {
+        match <- sapply(pchList, identical, x)
+        if (any(match)) return(names(pchList)[match])
+        x
+    }
+    pchValue <- function(x) {
+        match <- which(names(pchList) == x)
+        if (length(match)) return(pchList[[ match[1] ]])
+        ## otherwise just return the value as character
+        x
+    }
+    colList <- palette()
+    ltyList <- c("solid", "dashed", "dotted",
+                 "dotdash", "longdash", "twodash", "blank")
+    ltyName <- function(x) {
+        if (identical(x, 0)) x <- "blank"
+        if (is.numeric(x)) x <- ltyList[x]
+        x
+    }
+    ltyValue <- function(x) {
+        if (identical(x, "blank")) return(0)
+        ## return index of item in ltyList
+        match <- which(x == ltyList)
+        if (length(match)) return(match)
+        x
+    }
+    ## widgets
+    #dialog <- gwindow(title = "Point / line style")
+    wingroup <- ggroup(horizontal = FALSE)#, container = dialog)
+    tmp1g <- ggroup(container = wingroup, spacing = 1)
+    tmp2g <- ggroup(container = wingroup, spacing = 1)
+    tmp3g <- ggroup(container = wingroup, spacing = 1)
+    glabel(" Symbol:", container = tmp1g)
+    wid.pch <- gdroplist(names(pchList), selected = 0, container = tmp1g,
+                         editable = TRUE, coerce.with = pchValue)
+    glabel(" Scale:", container = tmp1g)
+    wid.cex <- gedit("", width = 4, container = tmp1g,
+                     coerce.with = as.numeric)
+    glabel(" Alpha:", container = tmp1g)
+    wid.alpha <- gedit("", width = 4, container = tmp1g,
+                       coerce.with = as.numeric)
+    glabel(" Color:", container = tmp2g)
+    wid.col <- gdroplist(colList, selected = 0, container = tmp2g,
+                                  editable = TRUE)
+    glabel(" Fill color:", container = tmp2g)
+    wid.fill <- gdroplist(colList, selected = 0, container = tmp2g,
+                                  editable = TRUE)
+    glabel(" Line Width:", container = tmp3g)
+    wid.lwd <- gedit("", width = 4, container = tmp3g,
+                     coerce.with = as.numeric)
+    glabel(" Line Type:", container = tmp3g)
+    wid.lty <- gdroplist(ltyList, selected = 0, container = tmp3g,
+                          editable = TRUE, coerce.with = ltyValue)
+    ## current settings
+    plot.symbol <- trellis.par.get("plot.symbol")
+    svalue(wid.fill) <- plot.symbol$fill
+    svalue(wid.col) <- plot.symbol$col
+    svalue(wid.alpha) <- toString(plot.symbol$alpha)
+    svalue(wid.pch) <- pchName(plot.symbol$pch)
+    svalue(wid.cex) <- toString(plot.symbol$cex)
+    plot.line <- trellis.par.get("plot.line")
+    svalue(wid.lwd) <- toString(plot.line$lwd)
+    svalue(wid.lty) <- ltyName(plot.line$lty)
+    ## handlers
+    ok_handler <- function(h, ...)
+    {
+        ok <- function(x) if (is.na(x)) NULL else x
+        newsym <- list(fill = svalue(wid.fill),
+                       col = svalue(wid.col),
+                       alpha = ok(svalue(wid.alpha)),
+                       pch = ok(svalue(wid.pch)),
+                       cex = ok(svalue(wid.cex)))
+        newline <- list(col = svalue(wid.col),
+                       lwd = ok(svalue(wid.lwd)),
+                       lty = ok(svalue(wid.lty)))
+        playDevSet(playState)
+        trellis.par.set(plot.symbol = newsym)
+        trellis.par.set(plot.line = newline)
+        if (!playState$is.lattice) {
+          callArg(playState, "col") <- newsym$col
+          callArg(playState, "pch") <- newsym$pch
+          callArg(playState, "cex") <- newsym$cex
+          callArg(playState, "lty") <- newline$lty
+          callArg(playState, "lwd") <- newline$lwd
+        }
+        dispose(h$obj)
+        playState$win$present()
+        playReplot(playState)
+    }
+    gbasicdialog(title = "Point / line style", widget = wingroup, # parent = ?
+                 handler = ok_handler)
+}
+
 set.label.style_handler <- function(widget, playState)
 {
     playFreezeGUI(playState)
     on.exit(playThawGUI(playState))
     ## constants
-    faceList <- c("plain", "bold", "italic", "bold.italic")
+    faceList <- c("plain", "bold", "italic", "bold.italic", "symbol")
     faceName <- function(x) {
         if (is.numeric(x)) x <- faceList[x]
         x
@@ -146,10 +270,7 @@ set.label.style_handler <- function(widget, playState)
     wid.lineheight <- gedit("", width = 4, container = tmp2g,
                        coerce.with = as.numeric)
     ## current settings
-    user.text <- trellis.par.get("user.text")
-    if (is.null(eval(user.text)))
-        user.text <- trellis.par.get("add.text")
-    ## values
+    user.text <- current.user.text()
     svalue(wid.col) <- user.text$col
     svalue(wid.cex) <- toString(user.text$cex)
     svalue(wid.font) <- faceName(user.text$font)
@@ -173,7 +294,6 @@ set.label.style_handler <- function(widget, playState)
     gbasicdialog(title = "Label style", widget = wingroup,
                  handler = ok_handler)
 }
-
 
 set.arrow.style_handler <- function(widget, playState)
 {
@@ -313,10 +433,7 @@ set.brush.style_handler <- function(widget, playState)
     wid.cex <- gedit("", width = 4, container = tmp2g,
                      coerce.with = as.numeric)
     ## current settings
-    brush.symbol <- trellis.par.get("brush.symbol")
-    if (is.null(eval(brush.symbol)))
-        brush.symbol <- brush.symbol.default
-    ## values
+    brush.symbol <- current.brush.symbol()
     svalue(wid.fill) <- brush.symbol$fill
     svalue(wid.col) <- brush.symbol$col
     svalue(wid.alpha) <- toString(brush.symbol$alpha)

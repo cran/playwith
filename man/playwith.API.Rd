@@ -7,6 +7,8 @@
 \alias{playReplot}
 \alias{playNewPlot}
 \alias{playSourceCode}
+\alias{playUndo}
+\alias{updateLinkedSubscribers}
 \alias{playUnlink}
 \alias{playAnnotate}
 \alias{playPrompt}
@@ -19,21 +21,6 @@
 \details{
   \code{\link{playwith}} plots (incorporating a plot, window and device)
   are represented by a \code{\link{playState}} object.
-
-%	A \code{playwith} tool is a function ("constructor") that creates
-%	a graphical-user-interface widget (a \code{\link[RGtk2]{gtkToolItem}}).
-%	That widget may also have functions attached to it, which are run in
-%	response to user interaction, or every time the plot is drawn.
-
-%	Constructors should use the
-%	convenience function \code{\link{quickTool}} where possible.
-%	If the constructor function returns \code{NA}, that tool is skipped.
-%	So one should check whether the tool can work with the current plot,
-%	and skip it otherwise.
-
-%	Simple tools to control parameters can be created with
-%	the convenience function \code{\link{parameterControlTool}},
-%	corresponding to the \code{parameters} argument of \code{\link{playwith}}.
 
 	Following is a table of the API functions that can be used to
 	work with the plot, and to write new interactive tools.
@@ -71,16 +58,23 @@
 	      data points.
 	    }
 	    \item{\code{\link{playSetIDs}(playState, value, type, space,
-		redraw)}}{
+		add, redraw, pos)}}{
 	      sets which data points are brushed or
 	      labelled. \code{type} defaults to \code{"brushed"};
-	      \code{space} is ignored unless \code{type = "ids"}.
+	      \code{space} is ignored unless \code{type = "labelled"}.
 	    }
 	    \item{\code{\link{playClear}(playState, type, redraw)}}{
 	      remove one or more of the \code{type}s
-	      \code{"annotations"}, \code{"ids"}, \code{"brushed"}. The
+	      \code{"annotations"}, \code{"labelled"}, \code{"brushed"}. The
 	      latter will also apply to any linked plots. If
 	      \code{redraw = FALSE} the display will not be updated.
+	    }
+	    \item{\code{playUndo(playState)}}{
+	      reverts the last change any annotations (including the set
+	      of labelled and brushed data points).
+	    }
+	    \item{\code{updateLinkedSubscribers(playState, redraw)}}{
+	      triggers a redraw of any linked plots.
 	    }
 	    \item{\code{playUnlink(playState)}}{ removes links from the
 	      given plot to any other plots (for linked brushing).
@@ -97,15 +91,17 @@
 	  coordinates of whatever plot \dfn{space} they occurred in (but
 	  are available as device coordinates too).
 	  \describe{
-	    \item{\code{\link{playSelectData}(playState, prompt, foo)}}{
+	    \item{\code{\link{playSelectData}(playState, prompt, scales,
+		foo)}}{
 	      interactively select data from the plot (one point or a
 	      whole region). }
 	    \item{\code{\link{playPointInput}(playState, prompt)}}{ prompt for
 	      a click on the plot. Similar to \code{\link{locator}}. }
-	    \item{\code{\link{playLineInput}(playState, prompt)}}{ prompt to
-	      drag a line. }
-	    \item{\code{\link{playRectInput}(playState, prompt)}}{ prompt to
-	      drag a rectangular region. }
+	    \item{\code{\link{playLineInput}(playState, prompt,
+		scales)}}{
+	      prompt to drag a line. }
+	    \item{\code{\link{playRectInput}(playState, prompt,
+		scales)}}{ prompt to drag a rectangular region. }
 	    \item{\code{playPrompt(playState, text)}}{ sets the
 	      statusbar text. Pass \code{NULL} to reset. The GUI is
 	      frozen when the prompt is set and unfrozen when reset. }
@@ -122,7 +118,7 @@
 	      given plot \dfn{space}, i.e. after moving to the
 	      corresponding grid viewport.
 	    }
-	    \item{\code{playAnnotate(playState, annot, space)}}{
+	    \item{\code{playAnnotate(playState, annot, space, add, redraw)}}{
 	      adds the annotation (a call or expression to draw on the
 	      plot) to the list of persistent annotations, and draws
 	      them. These will always be drawn after plotting (unless they
@@ -212,6 +208,7 @@
 \author{ Felix Andrews \email{felix@nfrac.org}  }
 \seealso{
   \code{\link{playwith}},
+  \code{\link{playState}},
   \code{\link{convertFromDevicePixels}}
 }
 \examples{

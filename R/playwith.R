@@ -125,7 +125,6 @@ playwith <-
         myWin["default-width"] <- width * 96
         myWin["default-height"] <- height * 96
         myWin["modal"] <- modal
-        #myWin$show()
         ## switch to GTK event loop while the window is in focus (for tooltips)
         myWin$addEvents(GdkEventMask["focus-change-mask"])
         gSignalConnect(myWin, "focus-in-event", gtkmain_handler,
@@ -244,9 +243,14 @@ playwith <-
                    + GdkEventMask["button-release-mask"]
                    + GdkEventMask["exposure-mask"])
     myHBox$packStart(myDA)
-    ## note, this constraint is removed below
-    myDA$setSizeRequest(width * 96, height * 96)
+    myWin$show()
     asCairoDevice(myDA, pointsize = pointsize)
+    ## note, this constraint is removed below
+    dpi <- dev.size("px") / dev.size("in")
+    myDA$setSizeRequest(width * dpi[1], height * dpi[2])
+    ## try to force redraw
+    gdkWindowProcessAllUpdates()
+    while (gtkEventsPending()) gtkMainIterationDo(blocking=FALSE)
     ## need to regenerate coord spaces after resize
     gSignalConnect(myDA, "configure-event", configure_handler,
                    data=playState)
@@ -262,7 +266,7 @@ playwith <-
     pageEntry["width-chars"] <- 2
     gSignalConnect(pageEntry, "activate",
                    function(widget, playState) {
-                       if (!playState$tmp$plot.ready) return()
+                       if (!isTRUE(playState$tmp$plot.ready)) return()
                        newPage <- round(as.numeric(widget["text"]))
                        if (newPage == playState$page) return()
                        playState$page <- newPage
@@ -277,7 +281,7 @@ playwith <-
     pageScrollbar["update-policy"] <- GtkUpdateType["delayed"]
     gSignalConnect(pageScrollbar, "value-changed",
                    function(widget, playState) {
-                       if (!playState$tmp$plot.ready) return()
+                       if (!isTRUE(playState$tmp$plot.ready)) return()
                        newPage <- round(widget$getValue())
                        if (newPage == playState$page) return()
                        playState$page <- newPage
@@ -303,7 +307,6 @@ playwith <-
     myHBox["resize-mode"] <- GtkResizeMode["queue"] ## does nothing?
     ## after resize, remove minimum size constraint from device
     myDA$setSizeRequest(-1, -1)
-    myWin$show()
     ## store the state of this plot window in a new environment
     ## set per-window options -- can be replaced by explicit arguments
     playState$page <- 1
@@ -367,12 +370,15 @@ playwith <-
         playState$linked <- link.to$linked
         playState$linked$subscribers <-
             c(playState$linked$subscribers, playState)
+        ## set click.mode from linked plot
+        if (is.null(dots$click.mode))
+            playState$click.mode <- link.to$tmp$click.mode
     } else {
         playState$linked <- new.env(parent = baseenv())
         playState$linked$ids <- list()
         playState$linked$subscribers <- list(playState)
     }
-    playState$undoStack <- list()
+    playState$tmp$undoStack <- list()
     ## graphical user interface
     playState$uiManager <- uiManager
     playState$actionGroups <- actionGroups
@@ -399,6 +405,8 @@ playwith <-
     for (i in seq_along(parameters)) {
         parname <- names(parameters)[i]
         parval <- parameters[[i]]
+        if (is.list(parval)) parval <- parval[[1]]
+        if (is.function(parval)) next
         assign(parname, parval[1], envir=env)
     }
     ## make dynamic parameter tools
@@ -561,6 +569,7 @@ playPostPlot <- function(playState)
     playDevSet(playState)
     result <- playState$result
     if (inherits(result, "trellis")) {
+        playState$trellis <- result
         ## work out panels and pages
         nPackets <- prod(dim(result))
         nPanels <- nPackets
@@ -575,13 +584,20 @@ playPostPlot <- function(playState)
         ## plot trellis object (specified page only)
         plotOnePage(result, page = playState$page)
         ## need to store this, it refers to last plot only!
-        playState$tmp$currentLayout <- trellis.currentLayout(which="packet")
-        playState$trellis <- result
+        playState$tmp$currentLayout <-
+            trellis.currentLayout(which="packet")
+        ## use lattice style settings attached to trellis object
+        ## for any annotations (in updateActions(), below)
+        if (!is.null(result$par.settings)) {
+            opar <- trellis.par.get()
+            trellis.par.set(result$par.settings)
+            on.exit(trellis.par.set(opar, strict = TRUE))
+        }
     }
     if (inherits(result, "ggplot")) {
+        playState$ggplot <- result
         ## plot ggplot object
         print(result)
-        playState$ggplot <- result
         ## typically want: playState$viewport <- list(plot="panel_1_1")
         vpNames <- grid.ls(viewports=TRUE, grobs=FALSE, print=FALSE)$name
         panelNames <- vpNames[grep("panel", vpNames)]
@@ -730,6 +746,15 @@ window.close_handler <- function(widget, event, playState)
         ## if on.close() returns TRUE, do not close the window
         if (isTRUE(foo)) return(TRUE)
     }
+    if (length(playState$linked$subscribers) > 1) {
+        ans <- gconfirm("Also close linked plots?",
+                        parent = playState$win)
+        if (isTRUE(ans)) {
+            lapply(playState$linked$subscribers,
+                   playDevOff)
+            return(FALSE)
+        }
+    }
     ## close the window and clean up
     playDevOff(playState)
     return(FALSE)
@@ -805,21 +830,8 @@ deparseOneLine <-
     tmp <- gsub(";\\{", " \\{", tmp)
     ## update: need this for long inline vectors:
     tmp <- gsub(";,", ",", tmp)
+    tmp <- gsub(",;", ",", tmp)
     tmp
-}
-
-plotCoords.default <-
-    function(the.call, envir=parent.frame(), log=NULL, recycle=TRUE)
-{
-    stopifnot(is.call(the.call))
-    ## put call into canonical form
-    the.call <- match.call(eval(the.call[[1]], envir=envir), the.call)
-    tmp.x <- eval(the.call$x, envir)
-    tmp.y <- if ('y' %in% names(the.call)) eval(the.call$y, envir)
-    if (inherits(tmp.x, "zoo") && is.null(tmp.y))
-        return(xy.coords(stats::time(tmp.x), as.vector(tmp.x),
-                         log = log, recycle = recycle))
-    xy.coords(tmp.x, tmp.y, log = log, recycle = recycle)
 }
 
 copyLocalArgs <-
@@ -902,37 +914,6 @@ copyLocalArgs <-
     }
 }
 
-recursiveIndex <- function(call, index) {
-    ## if index is simple...
-    if (length(index) == 1) {
-        ## if index is NA, use original call object
-        if (is.na(index)) return(call)
-        return(call[[index]])
-    }
-    getx <- paste("[[", index, "]]", sep="", collapse="")
-    eval(parse(text=paste("call", getx, sep="")))
-}
-
-"recursiveIndex<-" <- function(call, index, value) {
-    ## if index is simple...
-    if (length(index) == 1) {
-        ## if index is NA, use original call object
-        if (is.na(index)) return(value)
-        call[[index]] <- value
-        return(call)
-    }
-    getx <- paste("[[", index, "]]", sep="", collapse="")
-    eval(parse(text=paste("call", getx, " <- value", sep="")))
-    call
-}
-
-recursive.as.list.call <- function(x) {
-    stopifnot(is.call(x))
-    x <- as.list(x)
-    lapply(x, function(z) if (is.call(z))
-           recursive.as.list.call(z) else z)
-}
-
 plotOnePage <- function(x, page, ...)
 {
     n <- page
@@ -942,4 +923,12 @@ plotOnePage <- function(x, page, ...)
     packet.panel.pageN <- function(..., page)
         packet.panel.default(..., page = page + n - 1)
     plot(x, packet.panel = packet.panel.pageN, ...)
+}
+
+## unused
+recursive.as.list.call <- function(x) {
+    stopifnot(is.call(x))
+    x <- as.list(x)
+    lapply(x, function(z) if (is.call(z))
+           recursive.as.list.call(z) else z)
 }

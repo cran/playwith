@@ -6,89 +6,125 @@ import(gridBase)
 #import(grid) ## gridBase needs grid attached
 import(grDevices)
 importFrom(graphics, par, plot)
+importFrom(stats, case.names)
 import(utils)
 
-## temporary
-export(marginal.plot)
-
-# the main function
+## playwith.R
 export(playwith,
-       autoplay,
+       playNewPlot,
+       playReplot,
        plotOnePage)
-S3method(print, playState)
 
-# latticist
-export(latticist,
-       reorderByFreq,
-       cutEq,
-       try.prepanel.loess)
-S3method(levelplot, table)
+## parameterControlTool.R
+export(parameterControlTool)
 
-## latticeStyleGUI
-export(latticeStyleGUI,
-       latticeStyleToBasePar,
-       panel.usertext,
-       panel.brushpoints,
-       latticeStyleDemo,
-       custom.theme.2,
-       custom.theme.black)
+## autoplay.R
+export(autoplay)
 
-# settings
+## settings
 export(playwith.options,
        playwith.getOption)
 
-# API
-export(playNewPlot,
-       playReplot,
-       parameterControlTool,
-       playDevCur,
+## apiMain.R
+export(playDevCur,
        playDevSet,
        playDevList,
        playDevOff,
-       playGetIDs,
-       playSetIDs,
-       playUnlink,
        callArg,
        "callArg<-",
        mainCall,
        "mainCall<-",
        updateMainCall,
-       playSourceCode,
-       playDo,
-       playAnnotate,
-       playClear,
-       playFreezeGUI,
-       playThawGUI,
-       playPrompt,
        rawXLim,
        rawYLim,
        "rawXLim<-",
-       "rawYLim<-")
+       "rawYLim<-",
+       playSourceCode,
+       playPrompt,
+       playFreezeGUI,
+       playThawGUI)
+S3method(print, playState)
 
-## xyData
-export(getDataArg,
-       xyCoords,
-       xyData,
-       plotCoords,
-       spaceCoordsToDataCoords,
-       dataCoordsToSpaceCoords)
-S3method(plotCoords, default)
-S3method(plotCoords, qqnorm)
-S3method(plotCoords, qqplot)
-S3method(plotCoords, qqmath)
-S3method(plotCoords, cloud)
-S3method(labels, ts)
-S3method(labels, zoo)
-
-## clickOrDrag
+## apiIdentify.R
 export(playSelectData,
+       playGetIDs,
+       playSetIDs,
+       playClear,
+       playUndo,
+       playUnlink,
+       updateLinkedSubscribers)
+
+## apiAnnotation.R
+export(playAnnotate,
+       playDo,
        playPointInput,
        playLineInput,
        playRectInput)
 
-## gridwork
+## apiData.R
+export(getDataArg,
+       xyCoords,
+       xyData,
+       spaceCoordsToDataCoords,
+       dataCoordsToSpaceCoords)
+
+## plotCoords.R
+export(plotCoords,
+       plotCoords.plot,
+       plotCoords.biplot)
+S3method(plotCoords, default)
+S3method(plotCoords, qqnorm)
+S3method(plotCoords, qqplot)
+S3method(plotCoords.plot, default)
+S3method(plotCoords.plot, dendrogram)
+S3method(plotCoords.plot, hclust)
+S3method(plotCoords.plot, mca)
+S3method(plotCoords.biplot, default)
+S3method(plotCoords.biplot, prcomp)
+S3method(plotCoords.biplot, princomp)
+S3method(plotCoords, qqmath)
+S3method(plotCoords, cloud)
+S3method(plotCoords, parallel)
+S3method(plotCoords, splom)
+S3method(case.names, dendrogram)
+S3method(case.names, hclust)
+S3method(case.names, prcomp)
+S3method(case.names, princomp)
+S3method(case.names, mca)
+S3method(case.names, zoo)
+S3method(case.names, Date)
+S3method(case.names, POSIXt)
+S3method(case.names, yearmon)
+S3method(case.names, yearqtr)
+
+## gridwork.R
 export(convertFromDevicePixels,
        convertToDevicePixels,
        inViewport,
        grobBBDevicePixels,
        showGrobsBB)
+
+## latticist.R
+export(latticist)
+
+## latticistCompose.R
+export(latticistCompose,
+       reorderByFreq,
+       cutEq,
+       try.prepanel.loess,
+       n.level.colors,
+       simpleColorKey)
+S3method(levelplot, table)
+
+## latticistParse.R
+export(latticistParse)
+
+## latticeStyleGUI.R
+export(latticeStyleGUI,
+       latticeStyleToBasePar,
+       panel.usertext,
+       panel.brushpoints,
+       panel.brushlines,
+       latticeStyleDemo,
+       custom.theme.2,
+       custom.theme.black)

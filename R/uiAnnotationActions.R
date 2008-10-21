@@ -14,7 +14,7 @@ updateAnnotationActionStates <- function(playState)
 {
     aGroup <- playState$actionGroups[["PlotActions"]]
     ## UndoAnnotation
-    showUndo <- (length(playState$undoStack) > 0)
+    showUndo <- (length(playState$tmp$undoStack) > 0)
     if (isBasicDeviceMode(playState))
         showUndo <- !is.null(playState$tmp$recorded.plot)
     aGroup$getAction("UndoAnnotation")$setSensitive(showUndo)
@@ -31,30 +31,12 @@ updateAnnotationActionStates <- function(playState)
     aGroup$getAction("EditAnnotations")$setSensitive(showEdit)
 }
 
-drawAnnotations <- function(playState, return.code = FALSE)
-{
-    theCode <- expression()
-    ## group by space
-    spaces <- names(playState$annotations)
-    for (space in unique(spaces)) {
-        items <- playState$annotations[spaces == space]
-        annots <- do.call("c", items)
-        expr <- playDo(playState,
-                       annots,
-                       space = space,
-                       return.code = return.code)
-        if (return.code)
-            theCode <- c(theCode, expr)
-    }
-    theCode
-}
-
 clear_handler <- function(widget, playState)
 {
     types <- c(
-               if (length(playState$ids) > 0) "ids",
-               if (length(playState$annotations) > 0) "annotations",
-               if (length(playState$linked$ids) > 0) "brushed"
+               if (length(playState$ids) > 0) "labelled",
+               if (length(playState$linked$ids) > 0) "brushed",
+               if (length(playState$annotations) > 0) "annotations"
                )
     if (length(types) == 0) { widget$hide(); return() }
     clear.types <- types
@@ -71,32 +53,7 @@ clear_handler <- function(widget, playState)
 }
 
 undo.annotation_handler <- function(widget, playState)
-{
-    if (isBasicDeviceMode(playState)) {
-        ## basic device mode: only one stored display
-        redoPlot <- recordPlot()
-        try(replayPlot(playState$tmp$recorded.plot))
-        generateSpaces(playState)
-        playState$tmp$recorded.plot <- redoPlot
-    } else {
-        ## normal mode
-        i <- length(playState$undoStack)
-        if (i == 0) return()
-        type <- playState$undoStack[[i]]
-        length(playState$undoStack) <- (i - 1)
-        if (type == "ids") {
-            length(playState$ids) <- length(playState$ids) - 1
-        } else if (type == "annotations") {
-            length(playState$annotations) <- length(playState$annotations) - 1
-        } else if (type == "linked") {
-            length(playState$linked$ids) <- length(playState$linked$ids) - 1
-        }
-        ## redraw
-        playReplot(playState)
-        if (type == "linked")
-            updateLinkedSubscribers(playState, redraw = TRUE)
-    }
-}
+    playUndo(playState)
 
 edit.annotations_handler <- function(widget, playState)
 {
@@ -105,10 +62,11 @@ edit.annotations_handler <- function(widget, playState)
     annotTxt <- paste(annotTxt, collapse = "\n")
     ## TODO: deparse / parse in a more readable form
     repeat {
-        newTxt <- guiTextInput(annotTxt, title="Edit annotations",
-                               prompt=paste("Make sure you keep this structure!",
-                               "(a list of expressions, named by space)", sep="\n"),
-                               accepts.tab=FALSE)
+        newTxt <-
+            guiTextInput(annotTxt, title="Edit annotations",
+                         prompt=paste("Make sure you keep this structure!",
+                         "(a list of expressions, named by space)", sep="\n"),
+                         accepts.tab=FALSE)
         if (is.null(newTxt)) break
         annotTxt <- newTxt
         tmp <- tryCatch(eval(parse(text=annotTxt)), error=function(e)e)
@@ -116,12 +74,49 @@ edit.annotations_handler <- function(widget, playState)
         if (inherits(tmp, "error")) {
             gmessage.error(conditionMessage(tmp))
         } else {
+            playStoreUndo(playState)
             playState$annotations <- tmp
             playReplot(playState)
+            ## update other tool states
+            updateAnnotationActionStates(playState)
             break
         }
     }
     playState$win$present()
+}
+
+rectCore <- function(playState, foo)
+{
+    pageAnnotation <- isTRUE(playState$page.annotation)
+    if (is.null(foo)) return()
+    if (is.null(foo$coords)) pageAnnotation <- TRUE
+    if (foo$is.click) return()
+    space <- foo$space
+    if (pageAnnotation) space <- "page"
+    myXY <- if (space == "page") foo$ndc else foo$coords
+    myXY$x <- signif(myXY$x, 7)
+    myXY$y <- signif(myXY$y, 7)
+    annot <- with(myXY, call("panel.rect",
+                             min(x), min(y), max(x), max(y)))
+    ## draw it and store it
+    playAnnotate(playState, annot, space = space)
+}
+
+lineCore <- function(playState, foo)
+{
+    pageAnnotation <- isTRUE(playState$page.annotation)
+    if (is.null(foo)) return()
+    if (is.null(foo$coords)) pageAnnotation <- TRUE
+    if (foo$is.click) return()
+    space <- foo$space
+    if (pageAnnotation) space <- "page"
+    myXY <- if (space == "page") foo$ndc else foo$coords
+    myXY$x <- signif(myXY$x, 7)
+    myXY$y <- signif(myXY$y, 7)
+    annot <- with(myXY, call("panel.segments",
+                             x[1], y[1], x[2], y[2]))
+    ## draw it and store it
+    playAnnotate(playState, annot, space = space)
 }
 
 arrowCore <- function(playState, foo)
@@ -389,17 +384,7 @@ annotateCore <- function(playState, foo)
             return()
         }
         ## draw it and store it
-        if (isBasicDeviceMode(playState)) {
-            ## just store previous display so can 'undo'
-            playState$tmp$recorded.plot <- originalPlot
-            ## draw it
-            playDo(playState, annot, space=space)
-            ## update other tool states
-            updateAnnotationActionStates(playState)
-        } else {
-            ## normal mode
-            playAnnotate(playState, annot, space = space)
-        }
+        playAnnotate(playState, annot, space = space)
 
         dispose(h$obj)
         playState$win$present()

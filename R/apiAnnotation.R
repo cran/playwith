@@ -3,63 +3,109 @@
 ## Copyright (c) 2007 Felix Andrews <felix@nfrac.org>
 ## GPL version 2 or newer
 
-playSelectData <-
-    function(playState = playDevCur(),
-             prompt = paste(
-             "Click or drag to select data points;",
-             "Right-click or Esc to cancel."),
-             foo = playRectInput(playState, prompt = prompt))
+playAnnotate <-
+    function(playState, annot, space = "plot",
+             add = TRUE, redraw = NA)
 {
-    force(foo)
-    if (is.null(foo)) return(NULL)
-    if (is.null(foo$coords)) return(NULL)
-    coords <- foo$coords
-    data <- xyCoords(playState, space = foo$space)
-    ## convert to log scale if necessary
-    data <- dataCoordsToSpaceCoords(playState, data)
-
-    if (length(data$x) == 0) {
-        gmessage.error(paste("Sorry, can not guess the data point coordinates.",
-                             "Please contact the maintainer with suggestions."))
-        return(NULL)
+    playStoreUndo(playState)
+    if (add == FALSE) { ## replace
+        if (length(playState$annotations)) ## exists
+            if (is.na(redraw)) redraw <- TRUE
+        playState$annotations <- list()
     }
-    which <- NULL
-    pos <- NULL
-    if (foo$is.click) {
-        x <- coords$x[1]
-        y <- coords$y[1]
-        ppxy <- playDo(playState,
-                       quote(list(
-                            lx=convertX(unit(x, "native"), "points", TRUE),
-                            ly=convertY(unit(y, "native"), "points", TRUE),
-                            px=convertX(unit(data$x, "native"), "points", TRUE),
-                            py=convertY(unit(data$y, "native"), "points", TRUE))),
-                       space=foo$space)
-        pdists <- with(ppxy, sqrt((px - lx)^2 + (py - ly)^2))
-        if (min(pdists, na.rm = TRUE) > 18)
-            ##warning("no observations within ", 18, " points")
-            which <- integer(0)
+    i <- length(playState$annotations) + 1
+    playState$annotations[[i]] <- as.expression(annot)
+    names(playState$annotations)[i] <- space
+    if (is.na(redraw)) {
+        ## draw without a full redraw
+        playDo(playState, annot, space = space)
+        ## update other tool states
+        updateAnnotationActionStates(playState)
+    }
+    if (isTRUE(redraw)) {
+        ## full redraw
+        playReplot(playState)
+    }
+    invisible()
+}
+
+playDo <- function(playState, expr, space = "plot",
+                   clip.off = !isTRUE(playState$clip.annotations),
+                   return.code = FALSE)
+{
+    playDevSet(playState)
+    vpName <- NULL
+    if (space == "page") {
+        ## normalised device coordinates
+        vpName <- "pageAnnotationVp"
+    } else {
+        ## user / plot coordinates
+        if (!is.null(playState$viewport)) {
+            ## grid graphics plot
+            vpName <- playState$viewport[[space]]
+            if (inherits(vpName, "viewport") || inherits(vpName, "vpPath"))
+                vpName <- vpName$name
+        }
+        else if (playState$is.lattice) {
+            ## lattice plot
+            packets <- playState$tmp$currentLayout
+            if (space == "plot") {
+                space <- packet.number()
+                if (length(space) == 0) {
+                    if (sum(packets > 0) > 1)
+                        stop("space not well specified")
+                    space <- packets[packets > 0][1]
+                }
+                space <- paste("packet", space)
+            }
+            packet <- as.numeric(sub("packet ", "", space))
+            whichOne <- which(packets == packet)
+            if (length(whichOne) == 0) return()
+            myCol <- col(packets)[whichOne]
+            myRow <- row(packets)[whichOne]
+            vpName <- trellis.vpname("panel", myCol, myRow, clip.off=clip.off)
+            ## NOTE: a panel is not in focus here (as in trellis.focus)
+            ## because that would destroy any previous focus state
+            ## -- if focus is required, do that before calling playDo.
+        }
         else {
-            which <- which.min(pdists)
-            pos <- with(ppxy, lattice:::getTextPosition(x = lx - px[which],
-                                                        y = ly - py[which]))
+            ## base graphics
+            space <- "plot"
+            if (clip.off) space <- "plot.clip.off"
+            vpName <- playState$tmp$baseVps[[space]]$name
         }
     }
-    else {
-        ## drag
-        ok <- TRUE
-        if (!foo$yOnly)
-            ok <- (min(coords$x) <= data$x) & (data$x <= max(coords$x))
-        if (!foo$xOnly)
-            ok <- ok & (min(coords$y) <= data$y) & (data$y <= max(coords$y))
-        which <- which(ok)
+    if (return.code) {
+        return(c(as.expression(call("seekViewport", vpName)),
+                 expr))
     }
-    subscripts <- data$subscripts[which]
-    if (is.null(subscripts)) subscripts <- which
-    c(list(subscripts = subscripts, which = which,
-           x = data$x[which], y = data$y[which],
-           pos = pos, is.click = foo$is.click),
-      foo)
+    ## store current viewport and restore it when finished
+    cur.vp <- current.vpPath()
+    on.exit({
+        upViewport(0)
+        if (!is.null(cur.vp)) downViewport(cur.vp)
+    })
+    ## do the stuff and return the result
+    seekViewport(vpName)
+    eval.parent(expr)
+}
+
+drawAnnotations <- function(playState, return.code = FALSE)
+{
+    theCode <- expression()
+    ## group by space
+    spaces <- names(playState$annotations)
+    for (space in unique(spaces)) {
+        items <- playState$annotations[spaces == space]
+        annots <- do.call("c", items)
+        expr <- playDo(playState,
+                       annots,
+                       space = space,
+                       return.code = return.code)
+        if (return.code)
+            theCode <- c(theCode, expr)
+    }
+    theCode
 }
 
 playPointInput <-
@@ -102,7 +148,8 @@ playLineInput <-
              prompt = paste(
              "Click and drag to define a line",
              "(hold Shift to constrain to x or y scales);",
-             "Right-click or Esc to cancel."))
+             "Right-click or Esc to cancel."),
+             scales = "dynamic")
 {
     playDevSet(playState)
     playState$win$present()
@@ -115,7 +162,8 @@ playLineInput <-
     xy0 <- grid.locator()
     if (is.null(xy0)) return(NULL)
     xy0 <- lapply(xy0, as.numeric)
-    playClickOrDrag(playState, x0=xy0$x, y=xy0$y, shape="line")
+    playClickOrDrag(playState, x0=xy0$x, y=xy0$y,
+                    shape="line", scales = scales)
 }
 
 playRectInput <-
@@ -123,7 +171,8 @@ playRectInput <-
              prompt = paste(
              "Click and drag to define a rectangular region",
              "(hold Shift to constrain to x or y scales);",
-             "Right-click or Esc to cancel."))
+             "Right-click or Esc to cancel."),
+             scales = "dynamic")
 {
     playDevSet(playState)
     playState$win$present()
@@ -136,18 +185,20 @@ playRectInput <-
     xy0 <- grid.locator()
     if (is.null(xy0)) return(NULL)
     xy0 <- lapply(xy0, as.numeric)
-    playClickOrDrag(playState, x0=xy0$x, y=xy0$y, shape="rect")
+    playClickOrDrag(playState, x0=xy0$x, y=xy0$y,
+                    shape="rect", scales = scales)
 }
 
 ## assumes that the mouse button has already been pressed
 ## converts into user coordinates
 playClickOrDrag <-
     function(playState, x0, y0,
-             shape=c("rect", "line"))
+             shape=c("rect", "line"),
+             ...)
 {
     playDevSet(playState)
     foo <- handleClickOrDrag(playState$widgets$drawingArea,
-                             x0=x0, y0=y0, shape=shape)
+                             x0=x0, y0=y0, shape=shape, ...)
     if (is.null(foo)) return(NULL)
     dc <- foo$dc
     coords <- NULL
@@ -171,10 +222,13 @@ playClickOrDrag <-
 ## assumes that the mouse button has already been pressed
 handleClickOrDrag <-
     function(da, x0, y0,
-             shape = c("rect", "line"))
+             shape = c("rect", "line"),
+             scales = "dynamic")
 {
     CLICKDUR <- 0.25 ## seconds
     shape <- match.arg(shape)
+    dynScales <- ("dynamic" %in% scales)
+    if (dynScales) scales <- c("x", "y")
     ## xyInit is the original click location
     xyInit <- list(x=x0, y=y0)
     da.w <- da$getAllocation()$width
@@ -182,6 +236,13 @@ handleClickOrDrag <-
     buf <- gdkPixbufGetFromDrawable(src=da$window, src.x=0, src.y=0,
                                     dest.x=0, dest.y=0, width=da.w, height=da.h)
     if (is.null(buf)) stop("Could not make pixbuf")
+    ## background style
+    gcb <- gdkGCNew(da$window)
+    gcb$copy(da["style"]$blackGc)
+    gcb$setRgbFgColor(gdkColorParse("white")$color)
+    gcb$setLineAttributes(line.width=1, line.style=GdkLineStyle["solid"],
+                          cap.style=GdkCapStyle["butt"], join.style=GdkJoinStyle["miter"])
+    ## foreground style
     gc <- gdkGCNew(da$window)
     gc$copy(da["style"]$blackGc)
     gc$setRgbFgColor(gdkColorParse("black")$color)
@@ -192,8 +253,8 @@ handleClickOrDrag <-
     ## xyDrag is the drag-to location while dragging
     xyDrag <- xyInit
     ## these are used to constrain the drag to x or y scales
-    xOnly <- FALSE
-    yOnly <- FALSE
+    xOnly <- !("y" %in% scales)
+    yOnly <- !("x" %in% scales)
     ## xyEnd is the final drag-to location
     release_handler <- function(widget, event, env) {
         ## mouse button was released
@@ -216,14 +277,18 @@ handleClickOrDrag <-
             if (xOnly) yy[2] <- yy[1]
             if (yOnly) xx[2] <- xx[1]
         }
-         switch(shape,
-               line = gdkDrawLine(event$window, gc=gc,
-                   x1=xx[1], y1=yy[1],
+        for (i in 1:2) {
+            ## draw in background color first
+            tmp.gc <- if (i == 1) gcb else gc
+            switch(shape,
+               line = gdkDrawLine(event$window, gc=tmp.gc,
+               x1=xx[1], y1=yy[1],
                    x2=xx[2], y2=yy[2]),
-               rect = gdkDrawRectangle(event$window, gc=gc,
+               rect = gdkDrawRectangle(event$window, gc=tmp.gc,
                    filled=FALSE, x=min(xx), min(yy),
                    width=abs(diff(xx)), height=abs(diff(yy)))
                )
+        }
         return(TRUE) ## stop event here
     }
     tmpSigE <- gSignalConnect(da, "expose-event", expose_handler)
@@ -237,15 +302,17 @@ handleClickOrDrag <-
         if (exists("xyEnd", inherits=FALSE)) break
         xyDrag <- da$window$getPointer()
         ## check that pointer is inside the window
-        ## -- fails on linux?
+        ## -- fails on linux? TODO
         #if (is.null(xyDrag$retval)) break
         if ((as.flag(xyDrag$mask) & GdkModifierType["button1-mask"]) == 0) {
             ## mouse button was released
             xyEnd <- xyDrag
             break
         }
+        ## dynScales: choose scales dynamically
         ## (if it is a drag, not a click)
-        if ((proc.time()[3] - init_time) > CLICKDUR) {
+        if (dynScales &&
+            ((proc.time()[3] - init_time) > CLICKDUR)) {
             ## constrain to x or y scales if holding Shift
             if ((as.flag(xyDrag$mask) & GdkModifierType["shift-mask"])) {
                 ## decide which scale to constrain by direction of drag

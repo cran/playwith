@@ -13,7 +13,7 @@ globalActionGroup <- function(playState)
              list("Copy", "gtk-copy", "_Copy", "<Ctrl><Shift>C", "Copy current plot as an image", copy_handler),
              list("Print", "gtk-print", "_Print", "<Ctrl>P", "Print current plot", print_handler),
              list("Close", "gtk-close", "Close", "<Ctrl>W", "Close window and device", close_handler),
-             list("SetSize", NULL, "Set device _size...", "<Ctrl>0", NULL, set.size_handler),
+             list("SetSize", NULL, "Set device _size...", "<Ctrl>M", NULL, set.size_handler),
              list("IncrFont", NULL, "_Increase font size", "<Ctrl>plus", NULL, incr.font_handler),
              list("DecrFont", NULL, "De_crease font size", "<Ctrl>minus", NULL, decr.font_handler),
              list("StyleSettings", "gtk-select-color", "_Style settings", "<Ctrl>slash", NULL, style.settings_handler),
@@ -95,9 +95,7 @@ clone_handler <- function(widget, playState)
 }
 
 unlink_handler <- function(widget, playState)
-{
     playUnlink(playState)
-}
 
 save_handler <- function(widget, playState)
 {
@@ -137,7 +135,7 @@ save_handler <- function(widget, playState)
     h.in <- dev.size("in")[2]
     ## use same pointsize as embedded device
     ps <- playState$pointsize
-    if (ext == "eps") setEPS()
+    #if (ext == "eps") setEPS()
     devName <-
         switch(ext,
                pdf = "pdf",
@@ -151,7 +149,8 @@ save_handler <- function(widget, playState)
            {gmessage.error("Unrecognised filename extension")
             stop("Unrecognised filename extension")})
     devFun <- get(devName, mode = "function")
-    devCall <- call("dev.copy", devFun, file = filename,
+    callNm <- if (ext == "eps") "dev.copy2eps" else "dev.copy"
+    devCall <- call(callNm, device = devFun, file = filename,
                     width = w.in, height = h.in, pointsize = ps)
     if (!is.null(formals(devFun)$units))
         devCall$units <- "in"
