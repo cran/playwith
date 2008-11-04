@@ -503,14 +503,16 @@ doPlayNewPlot <- function(playState)
         eval(playState$call, playState$env)
     ## detect lattice
     playState$is.lattice <- (inherits(result, "trellis"))
-    if (playState$is.lattice) playState$trellis <- result
+    playState$trellis <- if (playState$is.lattice) result
     ## detect ggplot
     playState$is.ggplot <- (inherits(result, "ggplot"))
-    if (playState$is.ggplot) playState$ggplot <- result
+    ## detect vcd
+    playState$is.vcd <- (inherits(result, "structable"))
     ## detect base graphics
     ## TODO: use this elsewhere
     playState$is.base <- (!playState$is.lattice &&
                           !playState$is.ggplot &&
+                          !playState$is.vcd &&
                           is.null(playState$viewport))
     ## lattice calls can fall back to an update() wrapper
     if (playState$is.lattice &&
@@ -518,14 +520,13 @@ doPlayNewPlot <- function(playState)
         playState$call <- call("update", playState$call)
         updateMainCall(playState)
     }
-    ## lattice needs subscripts argument to correctly identify points.
-    ## otherwise warn, and just show the within-panel indices.
+    ## lattice needs subscripts to correctly identify points.
     if (playState$is.lattice &&
         prod(dim(playState$trellis)) > 1)
     {
         if (is.null(playState$trellis$panel.args[[1]]$subscripts)) {
-                gmessage("Call may need subscripts=TRUE to correctly identify points.",
-                         title="Warning", icon="warning", parent = playState$win)
+            warning(paste("Call may need subscripts = TRUE",
+                          "to correctly identify data points."))
         }
     }
     ## initialisation actions for a new plot (see uiManager.R)
@@ -568,19 +569,13 @@ playPostPlot <- function(playState)
     ## set back to this device, since may have switched during plot
     playDevSet(playState)
     result <- playState$result
+    playState$pages <- 1
     if (inherits(result, "trellis")) {
         playState$trellis <- result
-        ## work out panels and pages
-        nPackets <- prod(dim(result))
-        nPanels <- nPackets
-        nPages <- 1
-        if (!is.null(myLayout <- result$layout)) {
-            nPanels <- myLayout[1] * myLayout[2]
-            if (myLayout[1] == 0) nPanels <- myLayout[2]
-            nPages <- ceiling(nPackets / nPanels)
-        }
-        if (playState$page > nPages) playState$page <- 1
-        playState$pages <- nPages
+        ## work out number of pages
+        playState$pages <- npages(result)
+        if (playState$page > playState$pages)
+            playState$page <- 1
         ## plot trellis object (specified page only)
         plotOnePage(result, page = playState$page)
         ## need to store this, it refers to last plot only!
@@ -595,10 +590,9 @@ playPostPlot <- function(playState)
         }
     }
     if (inherits(result, "ggplot")) {
-        playState$ggplot <- result
         ## plot ggplot object
         print(result)
-        ## typically want: playState$viewport <- list(plot="panel_1_1")
+        ## typically want: playState$viewport <- list(plot = "panel_1_1")
         vpNames <- grid.ls(viewports=TRUE, grobs=FALSE, print=FALSE)$name
         panelNames <- vpNames[grep("panel", vpNames)]
         panelNames <- unique(panelNames)
@@ -607,6 +601,10 @@ playPostPlot <- function(playState)
         names(tmp.vp)[1] <- "plot"
         playState$viewport <- tmp.vp
     }
+#    if (inherits(result, "structable")) {
+#        ## can't really interact in this case
+#        playState$viewport <- NULL
+#    }
     ## store coordinate system(s)
     generateSpaces(playState)
     playState$tmp$plot.ready <- TRUE
@@ -656,7 +654,7 @@ generateSpaces <- function(playState)
         ## lattice plot
         packets <- playState$tmp$currentLayout
         playState$spaces <- paste("packet", packets[packets > 0])
-    } else {
+    } else if (playState$is.base) {
         ## base graphics plot
         playState$spaces <- "plot"
         ## use gridBase to make viewports
@@ -726,7 +724,9 @@ pages_post.plot.action <- function(widget, playState)
         widg$pageScrollBox["sensitive"] <- TRUE
         widg$pageScrollbar["sensitive"] <- TRUE
         widg$pageEntry["sensitive"] <- TRUE
-        widg$pageScrollBox$show()
+        if (widg$pageScrollBox["visible"] == FALSE) {
+            blockRedraws(widg$pageScrollBox$show())
+        }
     } else {
                                         #widg$pageScrollBox$hide()
         widg$pageScrollbar["sensitive"] <- FALSE
@@ -914,9 +914,32 @@ copyLocalArgs <-
     }
 }
 
+npages <- function(x) {
+    stopifnot(inherits(x, "trellis"))
+    ## work out number of pages that would be plotted
+    ## to display trellis object 'x'
+    nPackets <- prod(dim(x))
+    ## by default, first two dimensions
+    ## (conditioning variables) shown on each page
+    nPanels <- prod(head(dim(x), 2))
+    ## but if an explicit 'layout' is given...
+    if (!is.null(x$layout)) {
+        nPanels <- x$layout[1] * x$layout[2]
+        if (x$layout[1] == 0) nPanels <- x$layout[2]
+    }
+    ## TODO: what about 'skip'?
+    nPages <- ceiling(nPackets / nPanels)
+    nPages
+}
+
 plotOnePage <- function(x, page, ...)
 {
+    stopifnot(inherits(x, "trellis"))
     n <- page
+    if (is.null(x$layout)) {
+        if (length(dim(x)) > 2)
+            x$layout <- dim(x)[1:2]
+    }
     if (!is.null(x$layout))
         x$layout[3] <- 1
     ## based on code by Deepayan Sarkar
