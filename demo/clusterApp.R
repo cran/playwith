@@ -90,7 +90,7 @@ clusterApp <- function(data, ...)
         playState$env$clusters <- rep(0, length(xyCoords()$x))
 
     playwith(plot(hclust(dist(data, method = dist.method),
-                         method = clust.method)),
+                         method = clust.method), cex = 0.7),
              parameters = param,
              update.actions = list(drawClusterPoints),
              init.actions = list(initClust),

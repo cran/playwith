@@ -680,8 +680,7 @@ generateSpaces <- function(playState)
     upViewport(0)
     ## create a top-level viewport with normalised coordinates
     ## yscale origin is at top, to be consistent with device coordinates
-    if ("pageAnnotationVp" %in% curVps) {
-        downViewport("pageAnnotationVp")
+    if (("pageAnnotationVp" %in% curVps) == FALSE) {
         if (playState$is.lattice)
             downViewport(trellis.vpname("toplevel"))
         pushViewport(viewport(name = "pageAnnotationVp",
