@@ -1,7 +1,23 @@
 
+Changes in Version 0.9-44
+
+  o Added a "Stop" action to interrupt plotting.
+
+  o Added 'preplot.actions' argument to playwith().
+
+  o A custom 'handler' function can be specified for 'parameters' widgets.
+
+  o Improved demo("clusterApp").
+
+  o Brushing a single data point (line) in a parallel plot now works.
+
+  o "Select from table" to identify points now works in more cases.
+
+  o New function identifyGrob(), returns names of clicked grid-objects.
+
 Changes in Version 0.9-43
 
- o Fixed bug that caused annotations outside the plot area to fail.
+  o Fixed bug that caused annotations outside the plot area to fail.
 
 Changes in Version 0.9-42
 

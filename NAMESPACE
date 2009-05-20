@@ -1,3 +1,4 @@
+useDynLib(playwith, do_interrupt)
 
 import(RGtk2)
 import(gWidgets)
@@ -101,7 +102,8 @@ export(convertFromDevicePixels,
        convertToDevicePixels,
        inViewport,
        grobBBDevicePixels,
-       showGrobsBB)
+       showGrobsBB,
+       identifyGrob)
 
 ## panel.misc.R
 export(panel.usertext,
