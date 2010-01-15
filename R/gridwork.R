@@ -61,22 +61,22 @@ inViewport <- function(x.px, y.px, viewport)
      (min(y) <= y.px) & (y.px <= max(y)))
 }
 
-grobBBDevicePixels <- function(grob, viewport)
+grobBBDevicePixels <- function(grob, viewport, pad = 2)
 {
-    ## current viewport, restore when finished
-    vp <- current.vpPath()
-    on.exit({
-        upViewport(0)
-        if (length(vp) > 0) downViewport(vp)
-    })
-    upViewport(0)
-    if (!is.null(viewport))
-        downViewport(viewport)
     ## calculate bounding box
     if (inherits(grob, "points") ||
         inherits(grob, "lines") ||
         inherits(grob, "polyline"))
     {
+        ## current viewport, restore when finished
+        vp <- current.vpPath()
+        on.exit({
+            upViewport(0)
+            if (length(vp) > 0) downViewport(vp)
+        })
+        upViewport(0)
+        if (!is.null(viewport))
+            downViewport(viewport)
         ## grobX for these refers to the convex hull,
         ## which can be bad if they are colinear
         xy <- convertToDevicePixels(x = grob$x, y = grob$y)
@@ -87,8 +87,8 @@ grobBBDevicePixels <- function(grob, viewport)
                      grobY(grob, "north"))
         xy <- convertToDevicePixels(x = gx, y = gy)
     }
-    xy$x <- range(xy$x, na.rm = TRUE)
-    xy$y <- range(xy$y, na.rm = TRUE)
+    xy$x <- range(xy$x, na.rm = TRUE) + c(-pad, pad)
+    xy$y <- range(xy$y, na.rm = TRUE) + c(-pad, pad)
     xy
 }
 
@@ -116,16 +116,20 @@ showGrobsBB <-
     ## draw boxes around grobs
     bblist <- list()
     length(bblist) <- nrow(objs)
+    n <- 0
     for (i in seq_len(nrow(objs))) {
         vpPath <- objs$vpPath[i]
         if (vpPath == "") vpPath <- NULL
         gName <- objs$name[i]
         ## TODO: objs$gPath[i] // strict=TRUE
         grob <- grid.get(gName)
+        if (inherits(grob, "nullGrob"))
+            next
+        ## bounding box
         bb <- grobBBDevicePixels(grob, vpPath)
         bb$name <- gName
-        bb$class <- class(grob)
         bb$vpPath <- vpPath
+        bb$class <- class(grob)
         ## construct a display name
         displayName <- as.character(grob)
         depth <- objs$vpDepth[i] - 1
@@ -144,11 +148,12 @@ showGrobsBB <-
                       default.units="native", gp=gp.text,
                       name="TMP_BOUNDBOX")
         }
-        bblist[[i]] <- bb
+        n <- n + 1
+        bblist[[n]] <- bb
     }
+    length(bblist) <- n
     ## remove annotations from display list
     ## but do not redraw it yet (so still visible)
-    ## NOTE: after this grid.ls() fails, "evaluation nested too deeply"
     if (draw)
         grid.remove("TMP_BOUNDBOX", global=TRUE, redraw=FALSE)
     invisible(bblist)

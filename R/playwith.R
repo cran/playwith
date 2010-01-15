@@ -65,8 +65,9 @@ playwith <-
         plot.call <- call("update", plot.call)
     }
     if (missing(main.function)) main.function <- NULL
-    if (is.character(main.function))
-        main.function <- get(main.function)
+    main.function <- substitute(main.function)
+    if (is.language(main.function))
+        main.function <- toString(main.function)
     ## check types
     if (!is.call(plot.call))
         stop("'expr' / 'plot.call' should be a call")
@@ -697,7 +698,7 @@ pages_post.plot.action <- function(widget, playState)
     if (playState$pages > 1) {
         widg$pageScrollbar["adjustment"]["upper"] <- playState$pages+1
         widg$pageScrollbar["adjustment"]["value"] <- playState$page
-        widg$pageEntry["text"] <- as.character(playState$page)
+        widg$pageEntry["text"] <- toString(playState$page)
         widg$pageScrollBox["sensitive"] <- TRUE
         widg$pageScrollbar["sensitive"] <- TRUE
         widg$pageEntry["sensitive"] <- TRUE
@@ -791,6 +792,10 @@ gtkmainquit_handler <- function(widget, event, playState)
 }
 
 ## General utility functions
+
+## i'm pretty sure this behaviour used to be in base R:
+toString.function <- function(x, ...)
+    toString(deparse(x), ...)
 
 deparseOneLine <-
     function(expr, width.cutoff = 500, ...)
