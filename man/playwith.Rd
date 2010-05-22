@@ -446,6 +446,23 @@ playwith(stripplot(yield ~ site, data = barley,
                     groups = c("none", "year", "variety"),
                     linecol = "red"))
 
+## Looking through 100 time series and comparing to a reference;
+## Use buttons to save the current series number or its mean value.
+dat <- ts(matrix(cumsum(rnorm(100*100)), ncol = 100), start = 1900)
+colnames(dat) <- paste("Series", 1:100)
+ref <- (dat[,3] + dat[,4]) / 2
+playwith(xyplot(cbind(dat[,i], ref = ref)),
+  parameters = list(i = 1:100,
+     print_i = function(playState) print(playState$env$i),
+     print_mean = function(p) print(mean(dat[,p$env$i])),
+     save_to_ii = function(playState)
+       .GlobalEnv$ii <- playState$env$i,
+     append_to_ii = function(playState) {
+       if (!exists("ii")) ii <- c()
+       .GlobalEnv$ii <- c(ii, playState$env$i)
+     })
+)
+
 ## Composite plot (base graphics).
 ## Adapted from an example in help("legend").
 ## In this case, the initial plot() call is detected correctly;
@@ -468,8 +485,9 @@ playwith( {
 ## A ggplot example.
 ## NOTE: only qplot()-based calls will work.
 ## Labels are taken from rownames of the data.
-library(ggplot2)
-playwith(qplot(qsec, wt, data = mtcars) + stat_smooth())
+if (require(ggplot2)) {
+    playwith(qplot(qsec, wt, data = mtcars) + stat_smooth())
+}
 
 ## A minimalist grid plot.
 ## This shows how to get playwith to work with custom plots:
@@ -507,6 +525,19 @@ playwith(xyplot(y ~ x, xy, main = "Select points, then close"),
         on.close = confirmClose, modal = TRUE,
         click.mode = "Brush")
 
+## Ask user to save plot to PNG when window is closed:
+saveOnClose <- function(playState) {
+    playDevSet(playState)
+    if (!gconfirm("Save plot to PNG file? (Cancel = no)")) return(FALSE)
+    fname <- gfile("Save PNG file as:", type = "save")
+    if (is.na(fname)) return(TRUE) ## cancel
+    dev.off(dev.copy(Cairo_png, file = fname,
+        width = dev.size()[1], height = dev.size()[2]))
+    FALSE 
+}
+#playwith.options(on.close = saveOnClose)
+
+
 ## Demonstrate cacheing of objects in local environment.
 ## By default, only local variables in the plot call are stored.
 x_global <- rnorm(100)
@@ -535,22 +566,21 @@ playDevOff()
 playDevCur()
 
 \dontrun{
-## Memory usage test.
-## Big data object, do not try to guess labels or time.mode.
+## Big data example, do not try to guess labels or time.mode.
 gc()
 bigobj <- rpois(5000000, 1)
-object.size(bigobj) / 1048576 ## in MB
+print(object.size(bigobj), units = "Mb")
 gc()
 playwith(qqmath(~ bigobj, f.value = ppoints(500)),
-   data.points = NA, labels = NA)
+   data.points = NA, labels = NA, time.mode = FALSE)
 playDevOff()
 gc()
 ## or generate the trellis object first:
 trel <- qqmath(~ bigobj, f.value = ppoints(500))
 playwith(trel)
 rm(trel)
-## in this case, better to compute the sample first:
-subobj <- quantile(foo, ppoints(500), na.rm = TRUE)
+## in this case, it is much better to compute the sample first:
+subobj <- quantile(bigobj, ppoints(500), na.rm = TRUE)
 playwith(qqmath(~ subobj))
 rm(subobj)
 rm(bigobj)
