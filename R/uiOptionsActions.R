@@ -14,11 +14,13 @@ initOptionsActions <- function(playState)
     if (is.na(playState$time.mode)) {
         if (hasArgs) {
             ## detect default for time.mode based on data
-            dat <- xyData(playState, space="packet 1")
+            dat <- try(xyData(playState, space="packet 1"), silent = TRUE)
             playState$time.mode <-
-                (inherits(dat$x, "ts") ||
-                 inherits(dat$x, "zoo") ||
-                 is.somesortoftime(dat$x))
+                (is.list(dat) &&
+                 (inherits(dat$x, "ts") ||
+                  inherits(dat$x, "zoo") ||
+                  is.somesortoftime(dat$x))
+                 )
             ## once only ## TODO: better to wait for manual switch
             playState$.args$missing_time.mode <- FALSE
         } else {
